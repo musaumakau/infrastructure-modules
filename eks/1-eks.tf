@@ -26,6 +26,7 @@ resource "aws_iam_role_policy_attachment" "eks" {
 resource "aws_eks_cluster" "this" {
   name     = "${var.env}-${var.eks_name}"
   role_arn = aws_iam_role.eks.arn
+  version  = var.eks_version
 
   vpc_config {
     endpoint_private_access = false

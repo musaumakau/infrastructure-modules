@@ -12,6 +12,7 @@ variable "eks_name" {
 
 variable "eks_version" {
   description = "Desired Kubernetes version for the master"
+  type = string
 
 }
 variable "subnet_ids" {
@@ -22,6 +23,7 @@ variable "subnet_ids" {
 
 variable "node_iam_policies" {
   description = "List of IAM policies to attach to EKS-managed nodes"
+  type        = list(string)
   default = {
     1 = "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
     2 = "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
