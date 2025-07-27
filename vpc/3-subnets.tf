@@ -11,7 +11,7 @@ resource "aws_subnet" "private" {
     },
     var.private_subnet_tags
   )
-  
+
 }
 
 resource "aws_subnet" "public" {
@@ -27,5 +27,5 @@ resource "aws_subnet" "public" {
     },
     var.public_subnet_tags
   )
-  
+
 }

@@ -1,20 +1,20 @@
 variable "env" {
-    description = "Environment name"
-    type = string
-  
+  description = "Environment name"
+  type        = string
+
 }
 
 variable "eks_name" {
-    description = "Name of the cluster"
-    type = string
-  
+  description = "Name of the cluster"
+  type        = string
+
 }
 
 variable "enable_cluster_autoscaler" {
-    description = "Determines whether to deploy cluster autoscaler"
-    type = bool
-    default = true
-  
+  description = "Determines whether to deploy cluster autoscaler"
+  type        = bool
+  default     = true
+
 }
 variable "cluster_autoscaler_helm_version" {
   description = "Cluster Autoscaler Helm verion"
