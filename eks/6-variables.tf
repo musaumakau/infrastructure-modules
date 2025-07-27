@@ -12,7 +12,7 @@ variable "eks_name" {
 
 variable "eks_version" {
   description = "Desired Kubernetes version for the master"
-  type = string
+  type        = string
 
 }
 variable "subnet_ids" {
