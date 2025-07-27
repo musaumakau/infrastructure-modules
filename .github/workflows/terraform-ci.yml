@@ -9,6 +9,15 @@ jobs:
   terraform:
     name: Terraform Validate & Lint
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        module:
+          - vpc
+          - eks
+          - kubernetes-addons
+    defaults:
+      run:
+        working-directory: ./${{ matrix.module }}
 
     steps:
       - name: Checkout repo
@@ -17,7 +26,7 @@ jobs:
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.7.5 # or whatever you're using
+          terraform_version: 1.7.5
 
       - name: Terraform Init
         run: terraform init
@@ -37,4 +46,4 @@ jobs:
       - name: Checkov Security Scan
         uses: bridgecrewio/checkov-action@master
         with:
-          directory: .
+          directory: ./${{ matrix.module }}
