@@ -33,6 +33,11 @@ resource "aws_iam_policy" "cluster_autoscaler" {
 
   name = "${var.eks_name}-cluster-autoscaler"
 
+  tags = {
+    "checkov:skip=CKV_AWS_355" = "Cluster Autoscaler requires wildcard for dynamic scaling"
+    "checkov:skip=BC_AWS_290"  = "Necessary wildcard for EC2 and ASG describe actions"
+  }
+
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
