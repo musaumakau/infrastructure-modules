@@ -23,6 +23,18 @@ resource "aws_iam_role_policy_attachment" "eks" {
 
 }
 
+resource "aws_kms_key" "eks" {
+  description             = "KMS key for encrypting secrets in EKS"
+  deletion_window_in_days = 10
+  enable_key_rotation     = true
+}
+
+resource "aws_kms_alias" "eks" {
+  name          = "alias/eks"
+  target_key_id = aws_kms_key.eks.key_id
+}
+
+
 resource "aws_eks_cluster" "this" {
   name     = "${var.env}-${var.eks_name}"
   role_arn = aws_iam_role.eks.arn
