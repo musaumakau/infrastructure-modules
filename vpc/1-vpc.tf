@@ -14,7 +14,7 @@ resource "aws_default_security_group" "default" {
 
   # Remove all default ingress rules
   ingress = []
-  
+
   # Remove all default egress rules  
   egress = []
 

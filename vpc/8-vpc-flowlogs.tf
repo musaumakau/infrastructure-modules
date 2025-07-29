@@ -53,7 +53,7 @@ resource "aws_kms_alias" "cloudwatch_logs" {
 # CloudWatch Log Group with proper retention and encryption
 resource "aws_cloudwatch_log_group" "vpc_flow_log" {
   name              = "/aws/vpc/flowlogs"
-  retention_in_days = 365  # 1 year retention
+  retention_in_days = 365 # 1 year retention
   kms_key_id        = aws_kms_key.cloudwatch_logs.arn
 
   tags = {
