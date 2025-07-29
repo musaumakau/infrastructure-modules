@@ -23,15 +23,45 @@ resource "aws_iam_role_policy_attachment" "eks" {
 
 }
 
+data "aws_caller_identity" "current" {}
+
 resource "aws_kms_key" "eks" {
-  description             = "KMS key for encrypting secrets in EKS"
+  description             = "KMS key for EKS secrets encryption"
   deletion_window_in_days = 10
   enable_key_rotation     = true
-}
 
-resource "aws_kms_alias" "eks" {
-  name          = "alias/eks"
-  target_key_id = aws_kms_key.eks.key_id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Id      = "eks-key-policy"
+    Statement = [
+      {
+        Sid    = "AllowEKSRoleUseOfTheKey"
+        Effect = "Allow"
+        Principal = {
+          AWS = aws_iam_role.eks.arn
+        }
+        Action = [
+          "kms:Encrypt",
+          "kms:Decrypt",
+          "kms:ReEncrypt*",
+          "kms:GenerateDataKey*",
+          "kms:DescribeKey"
+        ]
+        Resource = aws_kms_key.eks.arn
+      },
+      {
+        Sid    = "AllowAccountAdminsFullAccess"
+        Effect = "Allow"
+        Principal = {
+          AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
+        }
+        Action = [
+          "kms:*"
+        ]
+        Resource = aws_kms_key.eks.arn
+      }
+    ]
+  })
 }
 
 
@@ -39,6 +69,14 @@ resource "aws_eks_cluster" "this" {
   name     = "${var.env}-${var.eks_name}"
   role_arn = aws_iam_role.eks.arn
   version  = var.eks_version
+
+  enabled_cluster_log_types = [
+    "api",
+    "audit",
+    "authenticator",
+    "controllerManager",
+    "scheduler"
+  ]
 
   encryption_config {
     provider {
