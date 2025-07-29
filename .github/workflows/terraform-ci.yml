@@ -1,3 +1,6 @@
+# Terraform CI Workflow
+# This workflow validates and lints Terraform code, and triggers a deployment pipeline if checks pass.
+# It runs on pushes to the main branch and on pull requests.
 name: Terraform Checks
 
 on:
