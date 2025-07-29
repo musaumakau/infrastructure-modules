@@ -28,6 +28,17 @@ resource "aws_eks_cluster" "this" {
   role_arn = aws_iam_role.eks.arn
   version  = var.eks_version
 
+  encryption_config {
+    provider {
+      key_arn = aws_kms_key.eks.arn
+    }
+    resources = ["secrets"]
+  }
+
+  tags = {
+    "checkov:skip=CKV_AWS_39" = "Public endpoint needed for CI/CD and remote management"
+  }
+
   vpc_config {
     endpoint_private_access = false
     endpoint_public_access  = true
