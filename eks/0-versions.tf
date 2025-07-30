@@ -8,7 +8,7 @@ terraform {
     }
     tls = {
       source  = "hashicorp/tls"
-      version = ">= 4.0.0" # Or lock it to a specific version like "~> 4.0"
-    }
+      version = ">= 4.0.0"
   }
+}
 }
