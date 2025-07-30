@@ -1,0 +1,66 @@
+# terraform-ci.yml
+#This workflow validates and lints Terraform code, and triggers a deployment pipeline if checks pass.
+name: Terraform Checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  terraform:
+    name: Terraform Validate & Lint
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        module:
+          - vpc
+          - eks
+          - kubernetes-addons
+    defaults:
+      run:
+        working-directory: ./${{ matrix.module }}
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.7.5
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive
+
+      - name: Run TFLint
+        uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: latest
+      - run: tflint --init && tflint
+
+      - name: Checkov Security Scan
+        uses: bridgecrewio/checkov-action@master
+        with:
+          directory: ./${{ matrix.module }}
+
+  dispatch-live-deploy:
+    name: Trigger Infra Live Deployment
+    needs: terraform  # ensures this runs only after validate/lint succeed
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger infrastructure-live repo pipeline
+        env:
+          GITHUB_TOKEN: ${{ secrets.REPO_DISPATCH_PAT }}
+        run: |
+          curl -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            https://api.github.com/repos/musaumakau/infrastructure-live/dispatches \
+            -d '{"event_type":"trigger-deploy"}'
