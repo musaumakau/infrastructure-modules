@@ -12,10 +12,10 @@ resource "aws_vpc" "this" {
 resource "aws_default_security_group" "default" {
   vpc_id = aws_vpc.this.id
 
-  # Remove all default ingress rules
+  #Remove all default ingress rules
   ingress = []
 
-  # Remove all default egress rules  
+  #Remove all default egress rules  
   egress = []
 
   tags = {
