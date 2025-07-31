@@ -1,5 +1,5 @@
 resource "aws_iam_role" "eks" {
-  name = "${var.env}-${var.eks_name}-eks-cluster"
+  name               = "${var.env}-${var.eks_name}-eks-cluster"
   assume_role_policy = <<POLICY
 {
   "Version": "2012-10-17",
@@ -44,7 +44,7 @@ resource "aws_kms_key" "eks" {
           "kms:GenerateDataKey*",
           "kms:DescribeKey"
         ]
-        Resource = "*"  # ✅ FIXED: Changed from aws_kms_key.eks.arn to "*"
+        Resource = "*" # ✅ FIXED: Changed from aws_kms_key.eks.arn to "*"
       },
       {
         Sid    = "AllowAccountAdminsFullAccess"
@@ -55,7 +55,7 @@ resource "aws_kms_key" "eks" {
         Action = [
           "kms:*"
         ]
-        Resource = "*"  # ✅ FIXED: Changed from aws_kms_key.eks.arn to "*"
+        Resource = "*" # ✅ FIXED: Changed from aws_kms_key.eks.arn to "*"
       }
     ]
   })
@@ -65,6 +65,7 @@ resource "aws_eks_cluster" "this" {
   name     = "${var.env}-${var.eks_name}"
   role_arn = aws_iam_role.eks.arn
   version  = var.eks_version
+
   enabled_cluster_log_types = [
     "api",
     "audit",
