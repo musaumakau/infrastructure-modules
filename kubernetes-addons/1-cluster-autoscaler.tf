@@ -77,7 +77,7 @@ resource "aws_iam_role_policy_attachment" "cluster_autoscaler" {
 }
 
 resource "helm_release" "cluster_autoscaler" {
-  count = var.enable_cluster_autoscaler ? 1 : 0
+  count = var.skip_helm_deployments ? 0 : 1
 
   name = "autoscaler"
 
