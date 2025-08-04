@@ -24,5 +24,5 @@ variable "skip_helm_deployments" {
   description = "Skip Helm deployments"
   type        = bool
   default     = false
-  
+
 }
