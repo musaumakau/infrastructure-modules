@@ -19,3 +19,10 @@ variable "openid_provider_arn" {
   description = "IAM Openid Connect Provider ARN"
   type        = string
 }
+
+variable "skip_helm_deployments" {
+  description = "Skip Helm deployments"
+  type        = bool
+  default     = false
+  
+}
