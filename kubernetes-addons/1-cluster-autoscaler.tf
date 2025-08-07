@@ -14,7 +14,7 @@ data "aws_iam_policy_document" "cluster_autoscaler" {
     }
 
     principals {
-      identifiers = [module.eks.cluster_oidc_provider_arn]
+      identifiers = [var.openid_provider_arn]
       type        = "Federated"
     }
   }
