@@ -4,7 +4,7 @@ locals {
 
 data "aws_iam_openid_connect_provider" "this" {
   count = local.oidc_exists ? 1 : 0
-  arn = var.openid_provider_arn
+  arn   = var.openid_provider_arn
 
 }
 
@@ -15,7 +15,7 @@ data "aws_iam_policy_document" "cluster_autoscaler" {
 
     condition {
       test     = "StringEquals"
-        variable = "${replace(data.aws_iam_openid_connect_provider.this[0].url, "https://", "")}:sub"
+      variable = "${replace(data.aws_iam_openid_connect_provider.this[0].url, "https://", "")}:sub"
       values   = ["system:serviceaccount:kube-system:cluster-autoscaler"]
     }
 
