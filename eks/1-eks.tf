@@ -82,7 +82,7 @@ resource "aws_eks_cluster" "this" {
 
   tags = {
     "checkov:skip=CKV_AWS_39" = "Public endpoint needed for CI/CD and remote management"
-    "checkov:skip=CKV_AWS_37" = "Public access from anywhere required for external access" # Add this line
+    "checkov:skip=CKV_AWS_38" = "Public access from anywhere required for external access"
   }
 
   vpc_config {
