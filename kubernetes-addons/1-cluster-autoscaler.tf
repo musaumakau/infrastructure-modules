@@ -15,12 +15,12 @@ data "aws_iam_policy_document" "cluster_autoscaler" {
 
     condition {
       test     = "StringEquals"
-      variable = "${replace(data.aws_iam_openid_connect_provider.this[0].url, "https://", "")}:sub"
+      variable = "${replace(module.eks.cluster_oidc_issuer_url, "https://", "")}:sub"
       values   = ["system:serviceaccount:kube-system:cluster-autoscaler"]
     }
 
     principals {
-      identifiers = [data.aws_iam_openid_connect_provider.this[0].arn]
+      identifiers = [module.eks.cluster_oidc_provider_arn]
       type        = "Federated"
     }
   }
