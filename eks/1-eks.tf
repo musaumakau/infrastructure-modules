@@ -55,7 +55,7 @@ resource "aws_kms_key" "eks" {
         Action = [
           "kms:*"
         ]
-        Resource = "*" # ✅ FIXED: Changed from aws_kms_key.eks.arn to "*"
+        Resource = "*"
       }
     ]
   })
