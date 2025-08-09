@@ -16,6 +16,7 @@ variable "eks_version" {
 variable "subnet_ids" {
   description = "List of subnets IDS, must be in at least two different availability zones"
   type        = list(string)
+}
 
 
 variable "node_iam_policies" {
