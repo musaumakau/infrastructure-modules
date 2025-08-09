@@ -95,3 +95,13 @@ resource "aws_eks_cluster" "this" {
 
   depends_on = [aws_iam_role_policy_attachment.eks]
 }
+resource "aws_eks_access_entry" "local_admin" {
+  cluster_name      = aws_eks_cluster.this.name
+  principal_arn     = data.aws_caller_identity.current.arn
+  type             = "STANDARD"
+  kubernetes_groups = ["system:masters"]
+  
+  tags = {
+    Name = "${var.env}-${var.eks_name}-local-admin-access"
+  }
+}
