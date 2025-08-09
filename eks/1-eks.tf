@@ -4,17 +4,6 @@ data "aws_vpc" "main" {
   }
 }
 
-data "aws_subnets" "private" {
-  filter {
-    name   = "vpc-id"
-    values = [data.aws_vpc.main.id]
-  }
-
-  tags = {
-    Type = "private"
-    Name = "${var.env}-private-*"
-  }
-}
 
 resource "aws_iam_role" "eks" {
   name               = "${var.env}-${var.eks_name}-eks-cluster"
