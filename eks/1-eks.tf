@@ -1,6 +1,5 @@
 resource "aws_iam_role" "eks" {
-  name = "${var.env}-${var.eks_name}-eks-cluster"
-
+  name               = "${var.env}-${var.eks_name}-eks-cluster"
   assume_role_policy = <<POLICY
 {
   "Version": "2012-10-17",
@@ -12,15 +11,14 @@ resource "aws_iam_role" "eks" {
       },
       "Action": "sts:AssumeRole"
     }
-]
- }
- POLICY
+  ]
+}
+POLICY
 }
 
 resource "aws_iam_role_policy_attachment" "eks" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
   role       = aws_iam_role.eks.name
-
 }
 
 data "aws_caller_identity" "current" {}
@@ -29,7 +27,6 @@ resource "aws_kms_key" "eks" {
   description             = "KMS key for EKS secrets encryption"
   deletion_window_in_days = 10
   enable_key_rotation     = true
-
   policy = jsonencode({
     Version = "2012-10-17"
     Id      = "eks-key-policy"
@@ -47,7 +44,7 @@ resource "aws_kms_key" "eks" {
           "kms:GenerateDataKey*",
           "kms:DescribeKey"
         ]
-        Resource = aws_kms_key.eks.arn
+        Resource = "*"
       },
       {
         Sid    = "AllowAccountAdminsFullAccess"
@@ -58,18 +55,16 @@ resource "aws_kms_key" "eks" {
         Action = [
           "kms:*"
         ]
-        Resource = aws_kms_key.eks.arn
+        Resource = "*"
       }
     ]
   })
 }
 
-
 resource "aws_eks_cluster" "this" {
   name     = "${var.env}-${var.eks_name}"
   role_arn = aws_iam_role.eks.arn
   version  = var.eks_version
-
   enabled_cluster_log_types = [
     "api",
     "audit",
@@ -87,15 +82,15 @@ resource "aws_eks_cluster" "this" {
 
   tags = {
     "checkov:skip=CKV_AWS_39" = "Public endpoint needed for CI/CD and remote management"
+    "checkov:skip=CKV_AWS_38" = "Public access from anywhere required for external access"
   }
 
   vpc_config {
     endpoint_private_access = true
     endpoint_public_access  = true
     public_access_cidrs     = var.eks_allowes_cidrs
-
-    subnet_ids = var.subnet_ids
-
+    subnet_ids              = var.subnet_ids
   }
+
   depends_on = [aws_iam_role_policy_attachment.eks]
 }
