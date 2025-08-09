@@ -61,6 +61,77 @@ resource "aws_kms_key" "eks" {
   })
 }
 
+resource "aws_security_group" "eks_cluster" {
+  name_prefix = "${var.env}-${var.eks_name}-cluster-"
+  description = "Security group for EKS cluster control plane"
+  vpc_id      = var.vpc_id
+
+  ingress {
+    description     = "HTTPS from worker nodes"
+    from_port       = 443
+    to_port         = 443
+    protocol        = "tcp"
+    security_groups = [aws_security_group.eks_nodes.id]
+  }
+
+  egress {
+    description = "All outbound traffic"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "${var.env}-${var.eks_name}-cluster-sg"
+  }
+
+  #checkov:skip=CKV_AWS_277: "0.0.0.0/0 egress required for EKS cluster API access"
+}
+
+resource "aws_security_group" "eks_nodes" {
+  name_prefix = "${var.env}-${var.eks_name}-nodes-"
+  description = "Security group for EKS worker nodes"
+  vpc_id      = var.vpc_id
+
+  ingress {
+    description = "Node to node communication"
+    from_port   = 0
+    to_port     = 65535
+    protocol    = "tcp"
+    self        = true
+  }
+
+  ingress {
+    description     = "Cluster API to node kubelets"
+    from_port       = 10250
+    to_port         = 10250
+    protocol        = "tcp"
+    security_groups = [aws_security_group.eks_cluster.id]
+  }
+
+  ingress {
+    description     = "Cluster API to node communication"
+    from_port       = 1025
+    to_port         = 65535
+    protocol        = "tcp"
+    security_groups = [aws_security_group.eks_cluster.id]
+  }
+  egress {
+    description = "All outbound traffic"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "${var.env}-${var.eks_name}-nodes-sg"
+  }
+
+  #checkov:skip=CKV_AWS_277: "0.0.0.0/0 egress required for container image pulls and AWS API access"
+}
+
 resource "aws_eks_cluster" "this" {
   name     = "${var.env}-${var.eks_name}"
   role_arn = aws_iam_role.eks.arn
@@ -97,6 +168,7 @@ resource "aws_eks_cluster" "this" {
     endpoint_public_access  = true
     public_access_cidrs     = var.eks_allowed_cidrs
     subnet_ids              = var.subnet_ids
+    security_group_ids      = [aws_security_group.eks_cluster.id]
   }
 
   depends_on = [aws_iam_role_policy_attachment.eks]
