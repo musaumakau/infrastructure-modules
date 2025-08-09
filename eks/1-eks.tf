@@ -1,5 +1,4 @@
 data "aws_vpc" "main" {
-  # Find VPC by environment tag - adjust this to match your VPC tagging
   tags = {
     Name = "${var.env}-vpc"
   }
