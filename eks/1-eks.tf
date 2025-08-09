@@ -98,9 +98,9 @@ resource "aws_eks_cluster" "this" {
 resource "aws_eks_access_entry" "local_admin" {
   cluster_name      = aws_eks_cluster.this.name
   principal_arn     = data.aws_caller_identity.current.arn
-  type             = "STANDARD"
+  type              = "STANDARD"
   kubernetes_groups = ["system:masters"]
-  
+
   tags = {
     Name = "${var.env}-${var.eks_name}-local-admin-access"
   }
