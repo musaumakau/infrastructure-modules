@@ -187,7 +187,7 @@ resource "aws_eks_cluster" "this" {
     endpoint_public_access  = true
     public_access_cidrs     = var.eks_allowed_cidrs
     subnet_ids              = var.subnet_ids
-    security_group_ids      = [aws_security_group.eks_cluster.id]
+
   }
 
   depends_on = [aws_iam_role_policy_attachment.eks]
