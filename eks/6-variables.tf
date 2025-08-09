@@ -18,11 +18,6 @@ variable "subnet_ids" {
   type        = list(string)
 }
 
-variable "vpc_id" {
-  description = "VPC ID where EKS cluster will be created"
-  type        = string
-}
-
 variable "node_iam_policies" {
   description = "List of IAM policies to attach to EKS-managed nodes"
   type        = map(string)
