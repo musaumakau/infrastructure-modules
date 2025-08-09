@@ -66,6 +66,12 @@ resource "aws_eks_cluster" "this" {
   role_arn = aws_iam_role.eks.arn
   version  = var.eks_version
 
+  access_config {
+    authentication_mode = "API_AND_CONFIG_MAP"
+  }
+
+
+
   enabled_cluster_log_types = [
     "api",
     "audit",
