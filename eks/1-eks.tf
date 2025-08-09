@@ -66,27 +66,11 @@ resource "aws_security_group" "eks_cluster" {
   description = "Security group for EKS cluster control plane"
   vpc_id      = var.vpc_id
 
-  ingress {
-    description     = "HTTPS from worker nodes"
-    from_port       = 443
-    to_port         = 443
-    protocol        = "tcp"
-    security_groups = [aws_security_group.eks_nodes.id]
-  }
-
-  egress {
-    description = "All outbound traffic"
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
 
   tags = {
     Name = "${var.env}-${var.eks_name}-cluster-sg"
   }
 
-  #checkov:skip=CKV_AWS_277: "0.0.0.0/0 egress required for EKS cluster API access"
 }
 
 resource "aws_security_group" "eks_nodes" {
@@ -94,42 +78,79 @@ resource "aws_security_group" "eks_nodes" {
   description = "Security group for EKS worker nodes"
   vpc_id      = var.vpc_id
 
-  ingress {
-    description = "Node to node communication"
-    from_port   = 0
-    to_port     = 65535
-    protocol    = "tcp"
-    self        = true
-  }
-
-  ingress {
-    description     = "Cluster API to node kubelets"
-    from_port       = 10250
-    to_port         = 10250
-    protocol        = "tcp"
-    security_groups = [aws_security_group.eks_cluster.id]
-  }
-
-  ingress {
-    description     = "Cluster API to node communication"
-    from_port       = 1025
-    to_port         = 65535
-    protocol        = "tcp"
-    security_groups = [aws_security_group.eks_cluster.id]
-  }
-  egress {
-    description = "All outbound traffic"
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
   tags = {
     Name = "${var.env}-${var.eks_name}-nodes-sg"
   }
 
-  #checkov:skip=CKV_AWS_277: "0.0.0.0/0 egress required for container image pulls and AWS API access"
+}
+
+resource "aws_security_group_rule" "cluster_ingress_from_nodes" {
+  type                     = "ingress"
+  from_port                = 443
+  to_port                  = 443
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.eks_nodes.id
+  security_group_id        = aws_security_group.eks_cluster.id
+  description              = "HTTPS from worker nodes"
+}
+
+resource "aws_security_group_rule" "cluster_egress_all" {
+  type              = "egress"
+  from_port         = 0
+  to_port           = 0
+  protocol          = "-1"
+  cidr_blocks       = ["0.0.0.0/0"]
+  security_group_id = aws_security_group.eks_cluster.id
+  description       = "All outbound traffic"
+
+  #checkov:skip=CKV_AWS_277: "0.0.0.0/0 egress required for EKS cluster API access and AWS service communication"
+}
+
+resource "aws_security_group_rule" "nodes_ingress_self" {
+  type              = "ingress"
+  from_port         = 0
+  to_port           = 65535
+  protocol          = "tcp"
+  self              = true
+  security_group_id = aws_security_group.eks_nodes.id
+  description       = "Node to node communication"
+
+  #checkov:skip=CKV_AWS_24: "Wide port range required for inter-node communication in EKS"
+}
+
+resource "aws_security_group_rule" "nodes_ingress_kubelet" {
+  type                     = "ingress"
+  from_port                = 10250
+  to_port                  = 10250
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.eks_cluster.id
+  security_group_id        = aws_security_group.eks_nodes.id
+  description              = "Cluster API to node kubelets"
+
+}
+
+resource "aws_security_group_rule" "nodes_ingress_cluster_api" {
+  type                     = "ingress"
+  from_port                = 1025
+  to_port                  = 65535
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.eks_cluster.id
+  security_group_id        = aws_security_group.eks_nodes.id
+  description              = "Cluster API to node communication"
+
+  #checkov:skip=CKV_AWS_24: "Wide port range required for cluster to node communication in EKS"
+}
+
+resource "aws_security_group_rule" "nodes_egress_all" {
+  type              = "egress"
+  from_port         = 0
+  to_port           = 0
+  protocol          = "-1"
+  cidr_blocks       = ["0.0.0.0/0"]
+  security_group_id = aws_security_group.eks_nodes.id
+  description       = "All outbound traffic"
+
+  #checkov:skip=CKV_AWS_277: "0.0.0.0/0 egress required for container image pulls, AWS API access, and package downloads"
 }
 
 resource "aws_eks_cluster" "this" {
