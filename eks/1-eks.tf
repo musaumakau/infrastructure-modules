@@ -66,11 +66,9 @@ resource "aws_security_group" "eks_cluster" {
   description = "Security group for EKS cluster control plane"
   vpc_id      = var.vpc_id
 
-
   tags = {
     Name = "${var.env}-${var.eks_name}-cluster-sg"
   }
-
 }
 
 resource "aws_security_group" "eks_nodes" {
@@ -82,6 +80,7 @@ resource "aws_security_group" "eks_nodes" {
     Name = "${var.env}-${var.eks_name}-nodes-sg"
   }
 
+  #checkov:skip=CKV2_AWS_5: "Security group will be attached to EKS node group instances automatically by AWS EKS service"
 }
 
 resource "aws_security_group_rule" "cluster_ingress_from_nodes" {
@@ -104,6 +103,7 @@ resource "aws_security_group_rule" "cluster_egress_all" {
   description       = "All outbound traffic"
 
   #checkov:skip=CKV_AWS_277: "0.0.0.0/0 egress required for EKS cluster API access and AWS service communication"
+  #checkov:skip=CKV_AWS_382: "All protocols egress required for EKS cluster to communicate with AWS services and download container images"
 }
 
 resource "aws_security_group_rule" "nodes_ingress_self" {
@@ -126,7 +126,6 @@ resource "aws_security_group_rule" "nodes_ingress_kubelet" {
   source_security_group_id = aws_security_group.eks_cluster.id
   security_group_id        = aws_security_group.eks_nodes.id
   description              = "Cluster API to node kubelets"
-
 }
 
 resource "aws_security_group_rule" "nodes_ingress_cluster_api" {
@@ -151,6 +150,7 @@ resource "aws_security_group_rule" "nodes_egress_all" {
   description       = "All outbound traffic"
 
   #checkov:skip=CKV_AWS_277: "0.0.0.0/0 egress required for container image pulls, AWS API access, and package downloads"
+  #checkov:skip=CKV_AWS_382: "All protocols egress required for EKS nodes to communicate with AWS services and download container images"
 }
 
 resource "aws_eks_cluster" "this" {
@@ -161,8 +161,6 @@ resource "aws_eks_cluster" "this" {
   access_config {
     authentication_mode = "API_AND_CONFIG_MAP"
   }
-
-
 
   enabled_cluster_log_types = [
     "api",
@@ -194,11 +192,11 @@ resource "aws_eks_cluster" "this" {
 
   depends_on = [aws_iam_role_policy_attachment.eks]
 }
+
 resource "aws_eks_access_entry" "local_admin" {
   cluster_name  = aws_eks_cluster.this.name
   principal_arn = "arn:aws:iam::649203810550:user/Kay"
   type          = "STANDARD"
-
 
   tags = {
     Name = "${var.env}-${var.eks_name}-local-admin-access"
