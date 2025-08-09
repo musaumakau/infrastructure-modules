@@ -106,6 +106,10 @@ resource "aws_security_group_rule" "cluster_egress_all" {
   cidr_blocks       = ["0.0.0.0/0"]
   security_group_id = aws_security_group.eks_cluster.id
   description       = "All outbound traffic"
+
+  #checkov:skip=CKV_AWS_277: "0.0.0.0/0 egress required for EKS cluster API access and AWS service communication"
+  #checkov:skip=CKV_AWS_382: "All protocols egress required for EKS cluster to communicate with AWS services and download container images"
+
 }
 
 resource "aws_security_group_rule" "nodes_ingress_self" {
@@ -116,6 +120,8 @@ resource "aws_security_group_rule" "nodes_ingress_self" {
   self              = true
   security_group_id = aws_security_group.eks_nodes.id
   description       = "Node to node communication"
+
+  #checkov:skip=CKV_AWS_24: "Wide port range required for inter-node communication in EKS"
 }
 
 resource "aws_security_group_rule" "nodes_ingress_kubelet" {
@@ -136,6 +142,8 @@ resource "aws_security_group_rule" "nodes_ingress_cluster_api" {
   source_security_group_id = aws_security_group.eks_cluster.id
   security_group_id        = aws_security_group.eks_nodes.id
   description              = "Cluster API to node communication"
+
+  #checkov:skip=CKV_AWS_24: "Wide port range required for cluster to node communication in EKS"
 }
 
 resource "aws_security_group_rule" "nodes_egress_all" {
@@ -146,6 +154,9 @@ resource "aws_security_group_rule" "nodes_egress_all" {
   cidr_blocks       = ["0.0.0.0/0"]
   security_group_id = aws_security_group.eks_nodes.id
   description       = "All outbound traffic"
+
+  #checkov:skip=CKV_AWS_277: "0.0.0.0/0 egress required for container image pulls, AWS API access, and package downloads"
+  #checkov:skip=CKV_AWS_382: "All protocols egress required for EKS nodes to communicate with AWS services and download container images"
 }
 
 resource "aws_eks_cluster" "this" {
