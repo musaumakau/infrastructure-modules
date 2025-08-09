@@ -93,11 +93,11 @@ resource "aws_eks_cluster" "this" {
   vpc_config {
     endpoint_private_access = true
     endpoint_public_access  = true
-    public_access_cidrs = var.eks_allowed_cidrs
-    subnet_ids = var.subnet_ids
+    public_access_cidrs     = var.eks_allowed_cidrs
+    subnet_ids              = var.subnet_ids
 
-    }
+  }
 
   depends_on = [aws_iam_role_policy_attachment.eks]
-  }
-  
+}
+
