@@ -48,6 +48,6 @@ variable "enable_irsa" {
 variable "eks_allowes_cidrs" {
   description = "List of CIDRs that are allowed to access the EKS cluster"
   type        = list(string)
-  default     = ["0.0.0.0/0"] # This allows access from anywhere, adjust as needed for security
+  default     = ["0.0.0.0/0"] 
 
 }
