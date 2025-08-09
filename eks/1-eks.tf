@@ -1,4 +1,4 @@
-data "aws_vpc" "main" {
+data "aws_vpc" "this" {
   tags = {
     Name = "${var.env}-vpc"
   }
