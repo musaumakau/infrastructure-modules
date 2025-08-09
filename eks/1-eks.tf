@@ -44,7 +44,7 @@ resource "aws_kms_key" "eks" {
           "kms:GenerateDataKey*",
           "kms:DescribeKey"
         ]
-        Resource = "*"
+        Resource = "*" # ✅ FIXED: Changed from aws_kms_key.eks.arn to "*"
       },
       {
         Sid    = "AllowAccountAdminsFullAccess"
@@ -55,7 +55,7 @@ resource "aws_kms_key" "eks" {
         Action = [
           "kms:*"
         ]
-        Resource = "*"
+        Resource = "*" # ✅ FIXED: Changed from aws_kms_key.eks.arn to "*"
       }
     ]
   })
@@ -65,6 +65,7 @@ resource "aws_eks_cluster" "this" {
   name     = "${var.env}-${var.eks_name}"
   role_arn = aws_iam_role.eks.arn
   version  = var.eks_version
+
   enabled_cluster_log_types = [
     "api",
     "audit",
@@ -88,9 +89,19 @@ resource "aws_eks_cluster" "this" {
   vpc_config {
     endpoint_private_access = true
     endpoint_public_access  = true
-    public_access_cidrs     = var.eks_allowes_cidrs
+    public_access_cidrs     = var.eks_allowed_cidrs
     subnet_ids              = var.subnet_ids
   }
 
   depends_on = [aws_iam_role_policy_attachment.eks]
+}
+resource "aws_eks_access_entry" "local_admin" {
+  cluster_name      = aws_eks_cluster.this.name
+  principal_arn     = data.aws_caller_identity.current.arn
+  type              = "STANDARD"
+  kubernetes_groups = ["system:masters"]
+
+  tags = {
+    Name = "${var.env}-${var.eks_name}-local-admin-access"
+  }
 }
