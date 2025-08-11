@@ -1,10 +1,3 @@
-data "aws_vpc" "this" {
-  tags = {
-    Name = "${var.env}-vpc"
-  }
-}
-
-
 resource "aws_iam_role" "eks" {
   name               = "${var.env}-${var.eks_name}-eks-cluster"
   assume_role_policy = <<POLICY
