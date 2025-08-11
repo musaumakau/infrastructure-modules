@@ -3,6 +3,11 @@ variable "env" {
   type        = string
 }
 
+variable "vpc_id" {
+  description = "VPC ID where EKS resources will be created"
+  type        = string
+  default     = ""
+}
 variable "eks_name" {
   description = "Name of the cluster"
   type        = string
