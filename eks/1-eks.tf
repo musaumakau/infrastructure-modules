@@ -1,3 +1,4 @@
+
 resource "aws_iam_role" "eks" {
   name               = "${var.env}-${var.eks_name}-eks-cluster"
   assume_role_policy = <<POLICY
@@ -44,7 +45,7 @@ resource "aws_kms_key" "eks" {
           "kms:GenerateDataKey*",
           "kms:DescribeKey"
         ]
-        Resource = "*" # ✅ FIXED: Changed from aws_kms_key.eks.arn to "*"
+        Resource = "*"
       },
       {
         Sid    = "AllowAccountAdminsFullAccess"
@@ -52,106 +53,105 @@ resource "aws_kms_key" "eks" {
         Principal = {
           AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
         }
-        Action = [
-          "kms:*"
-        ]
-        Resource = "*" # ✅ FIXED: Changed from aws_kms_key.eks.arn to "*"
+        Action   = ["kms:*"]
+        Resource = "*"
       }
     ]
   })
 }
 
-# resource "aws_security_group" "eks_cluster" {
-#   name_prefix = "${var.env}-${var.eks_name}-cluster-"
-#   description = "Security group for EKS cluster control plane"
-#   vpc_id      = var.vpc_id
+# Security Groups
+resource "aws_security_group" "eks_cluster" {
+  name_prefix = "${var.env}-${var.eks_name}-cluster-"
+  description = "Security group for EKS cluster control plane"
+  vpc_id      = var.vpc_id
 
-#   tags = {
-#     Name = "${var.env}-${var.eks_name}-cluster-sg"
-#   }
-# }
+  tags = {
+    Name = "${var.env}-${var.eks_name}-cluster-sg"
+  }
+}
 
-# resource "aws_security_group" "eks_nodes" {
-#   name_prefix = "${var.env}-${var.eks_name}-nodes-"
-#   description = "Security group for EKS worker nodes"
-#   vpc_id      = var.vpc_id
+resource "aws_security_group" "eks_nodes" {
+  name_prefix = "${var.env}-${var.eks_name}-nodes-"
+  description = "Security group for EKS worker nodes"
+  vpc_id      = var.vpc_id
 
-#   tags = {
-#     Name = "${var.env}-${var.eks_name}-nodes-sg"
-#   }
+  tags = {
+    Name = "${var.env}-${var.eks_name}-nodes-sg"
+  }
+}
 
-#   #checkov:skip=CKV2_AWS_5: "Security group will be attached to EKS node group instances automatically by AWS EKS service"
-# }
+# Security Group Rules
+resource "aws_security_group_rule" "cluster_ingress_from_nodes" {
+  type                     = "ingress"
+  from_port                = 443
+  to_port                  = 443
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.eks_nodes.id
+  security_group_id        = aws_security_group.eks_cluster.id
+  description              = "HTTPS from worker nodes"
+}
 
-# resource "aws_security_group_rule" "cluster_ingress_from_nodes" {
-#   type                     = "ingress"
-#   from_port                = 443
-#   to_port                  = 443
-#   protocol                 = "tcp"
-#   source_security_group_id = aws_security_group.eks_nodes.id
-#   security_group_id        = aws_security_group.eks_cluster.id
-#   description              = "HTTPS from worker nodes"
-# }
+resource "aws_security_group_rule" "cluster_egress_all" {
+  type              = "egress"
+  from_port         = 0
+  to_port           = 0
+  protocol          = "-1"
+  cidr_blocks       = ["0.0.0.0/0"]
+  security_group_id = aws_security_group.eks_cluster.id
+  description       = "All outbound traffic"
 
-# resource "aws_security_group_rule" "cluster_egress_all" {
-#   type              = "egress"
-#   from_port         = 0
-#   to_port           = 0
-#   protocol          = "-1"
-#   cidr_blocks       = ["0.0.0.0/0"]
-#   security_group_id = aws_security_group.eks_cluster.id
-#   description       = "All outbound traffic"
+  #checkov:skip=CKV_AWS_277: "0.0.0.0/0 egress required for EKS cluster API access and AWS service communication"
+  #checkov:skip=CKV_AWS_382: "All protocols egress required for EKS cluster to communicate with AWS services and download container images"
 
-#   #checkov:skip=CKV_AWS_277: "0.0.0.0/0 egress required for EKS cluster API access and AWS service communication"
-#   #checkov:skip=CKV_AWS_382: "All protocols egress required for EKS cluster to communicate with AWS services and download container images"
-# }
+}
 
-# resource "aws_security_group_rule" "nodes_ingress_self" {
-#   type              = "ingress"
-#   from_port         = 0
-#   to_port           = 65535
-#   protocol          = "tcp"
-#   self              = true
-#   security_group_id = aws_security_group.eks_nodes.id
-#   description       = "Node to node communication"
+resource "aws_security_group_rule" "nodes_ingress_self" {
+  type              = "ingress"
+  from_port         = 0
+  to_port           = 65535
+  protocol          = "tcp"
+  self              = true
+  security_group_id = aws_security_group.eks_nodes.id
+  description       = "Node to node communication"
 
-#   #checkov:skip=CKV_AWS_24: "Wide port range required for inter-node communication in EKS"
-# }
+  #checkov:skip=CKV_AWS_24: "Wide port range required for inter-node communication in EKS"
+}
 
-# resource "aws_security_group_rule" "nodes_ingress_kubelet" {
-#   type                     = "ingress"
-#   from_port                = 10250
-#   to_port                  = 10250
-#   protocol                 = "tcp"
-#   source_security_group_id = aws_security_group.eks_cluster.id
-#   security_group_id        = aws_security_group.eks_nodes.id
-#   description              = "Cluster API to node kubelets"
-# }
+resource "aws_security_group_rule" "nodes_ingress_kubelet" {
+  type                     = "ingress"
+  from_port                = 10250
+  to_port                  = 10250
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.eks_cluster.id
+  security_group_id        = aws_security_group.eks_nodes.id
+  description              = "Cluster API to node kubelets"
+}
 
-# resource "aws_security_group_rule" "nodes_ingress_cluster_api" {
-#   type                     = "ingress"
-#   from_port                = 1025
-#   to_port                  = 65535
-#   protocol                 = "tcp"
-#   source_security_group_id = aws_security_group.eks_cluster.id
-#   security_group_id        = aws_security_group.eks_nodes.id
-#   description              = "Cluster API to node communication"
+resource "aws_security_group_rule" "nodes_ingress_cluster_api" {
+  type                     = "ingress"
+  from_port                = 1025
+  to_port                  = 65535
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.eks_cluster.id
+  security_group_id        = aws_security_group.eks_nodes.id
+  description              = "Cluster API to node communication"
 
-#   #checkov:skip=CKV_AWS_24: "Wide port range required for cluster to node communication in EKS"
-# }
+  #checkov:skip=CKV_AWS_24: "Wide port range required for cluster to node communication in EKS"
+}
 
-# resource "aws_security_group_rule" "nodes_egress_all" {
-#   type              = "egress"
-#   from_port         = 0
-#   to_port           = 0
-#   protocol          = "-1"
-#   cidr_blocks       = ["0.0.0.0/0"]
-#   security_group_id = aws_security_group.eks_nodes.id
-#   description       = "All outbound traffic"
+resource "aws_security_group_rule" "nodes_egress_all" {
+  type              = "egress"
+  from_port         = 0
+  to_port           = 0
+  protocol          = "-1"
+  cidr_blocks       = ["0.0.0.0/0"]
+  security_group_id = aws_security_group.eks_nodes.id
+  description       = "All outbound traffic"
 
-#   #checkov:skip=CKV_AWS_277: "0.0.0.0/0 egress required for container image pulls, AWS API access, and package downloads"
-#   #checkov:skip=CKV_AWS_382: "All protocols egress required for EKS nodes to communicate with AWS services and download container images"
-# }
+  #checkov:skip=CKV_AWS_277: "0.0.0.0/0 egress required for container image pulls, AWS API access, and package downloads"
+  #checkov:skip=CKV_AWS_382: "All protocols egress required for EKS nodes to communicate with AWS services and download container images"
+}
 
 resource "aws_eks_cluster" "this" {
   name     = "${var.env}-${var.eks_name}"
@@ -187,7 +187,10 @@ resource "aws_eks_cluster" "this" {
     endpoint_public_access  = true
     public_access_cidrs     = var.eks_allowed_cidrs
     subnet_ids              = var.subnet_ids
-
+    security_group_ids = [
+      aws_security_group.eks_cluster.id,
+      aws_security_group.eks_nodes.id
+    ]
   }
 
   depends_on = [aws_iam_role_policy_attachment.eks]
