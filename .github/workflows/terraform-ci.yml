@@ -1,4 +1,3 @@
-#Terraform Pipeline
 #This workflow validates and lints Terraform code, and triggers a deployment pipeline if checks pass.
 name: Terraform Checks
 
