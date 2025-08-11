@@ -1,9 +1,3 @@
-data "aws_vpc" "this" {
-  tags = {
-    Name = "${var.env}-main"
-  }
-}
-
 
 resource "aws_iam_role" "eks" {
   name               = "${var.env}-${var.eks_name}-eks-cluster"
@@ -70,7 +64,7 @@ resource "aws_kms_key" "eks" {
 resource "aws_security_group" "eks_cluster" {
   name_prefix = "${var.env}-${var.eks_name}-cluster-"
   description = "Security group for EKS cluster control plane"
-  vpc_id      = data.aws_vpc.this.id
+  vpc_id      = aws_vpc.this.id
 
   tags = {
     Name = "${var.env}-${var.eks_name}-cluster-sg"
@@ -80,7 +74,7 @@ resource "aws_security_group" "eks_cluster" {
 resource "aws_security_group" "eks_nodes" {
   name_prefix = "${var.env}-${var.eks_name}-nodes-"
   description = "Security group for EKS worker nodes"
-  vpc_id      = data.aws_vpc.this.id
+  vpc_id      = aws_vpc.this.id
 
   tags = {
     Name = "${var.env}-${var.eks_name}-nodes-sg"
