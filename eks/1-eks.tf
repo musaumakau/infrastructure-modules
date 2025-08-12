@@ -153,18 +153,7 @@ resource "aws_security_group_rule" "nodes_egress_all" {
   #checkov:skip=CKV_AWS_382: "All protocols egress required for EKS nodes to communicate with AWS services and download container images"
 }
 
-resource "aws_security_group_rule" "cluster_ingress_external_https" {
-  type              = "ingress"
-  from_port         = 443
-  to_port           = 443
-  protocol          = "tcp"
-  cidr_blocks       = ["0.0.0.0/0"]
-  security_group_id = aws_security_group.eks_cluster.id
-  description       = "HTTPS access to EKS API server for kubectl, helm, and CI/CD operations"
 
-  #checkov:skip=CKV_AWS_260: "0.0.0.0/0 ingress required for EKS API server access from CI/CD pipelines and administrative clients"
-  #checkov:skip=CKV_AWS_24: "EKS cluster API endpoint requires external access for kubectl/helm operations and cluster management"
-}
 
 resource "aws_eks_cluster" "this" {
   name     = "${var.env}-${var.eks_name}"
