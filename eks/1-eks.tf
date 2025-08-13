@@ -203,7 +203,7 @@ resource "aws_eks_cluster" "this" {
     subnet_ids              = var.subnet_ids
     security_group_ids = [
       aws_security_group.eks_cluster.id,
-      #aws_security_group.eks_nodes.id
+      aws_security_group.eks_nodes.id
     ]
   }
 
