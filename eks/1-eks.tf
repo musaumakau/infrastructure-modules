@@ -220,6 +220,18 @@ resource "aws_eks_access_entry" "local_admin" {
   }
 }
 
+resource "aws_eks_access_policy_association" "github_actions" {
+  cluster_name  = aws_eks_cluster.this.name
+  principal_arn = "arn:aws:iam::649203810550:role/EksOIDCRole"
+  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+
+  access_scope {
+    type = "cluster"
+  }
+
+  depends_on = [aws_eks_access_entry.github_actions]
+}
+
 resource "aws_eks_access_policy_association" "local_admin" {
   cluster_name  = aws_eks_cluster.this.name
   principal_arn = "arn:aws:iam::649203810550:user/Kay"
