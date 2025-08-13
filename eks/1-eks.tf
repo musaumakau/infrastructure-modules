@@ -220,6 +220,16 @@ resource "aws_eks_access_entry" "local_admin" {
   }
 }
 
+resource "aws_eks_access_entry" "github_actions" {
+  cluster_name  = aws_eks_cluster.this.name
+  principal_arn = "arn:aws:iam::649203810550:role/EksOIDCRole"
+  type          = "STANDARD"
+
+  tags = {
+    Name = "${var.env}-${var.eks_name}-github-actions-access"
+  }
+}
+
 resource "aws_eks_access_policy_association" "github_actions" {
   cluster_name  = aws_eks_cluster.this.name
   principal_arn = "arn:aws:iam::649203810550:role/EksOIDCRole"
