@@ -1,21 +1,20 @@
-name: Infracost
+name: Infracost PR Analysis
 on:
   pull_request:
-    types: [opened, synchronize]
-  push:
-    branches:
-      - main
-
-env:
-  TF_ROOT: .
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'eks/**'
+      - 'vpc/**'
+      - 'kubernetes-addons/**'
+      - '.infracost/**'
 
 jobs:
   infracost:
-    name: Infracost
+    name: Cost Analysis
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: write # Required to post comments
+      pull-requests: write
 
     steps:
       - name: Setup Infracost
@@ -39,7 +38,7 @@ jobs:
 
       - name: Generate Infracost diff
         run: |
-          infracost diff --path=${TF_ROOT} \
+          infracost diff --config-file=.infracost/infracost.yml \
                           --format=json \
                           --compare-to=/tmp/infracost-base.json \
                           --out-file=/tmp/infracost.json
