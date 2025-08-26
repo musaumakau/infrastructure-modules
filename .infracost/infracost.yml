@@ -14,9 +14,9 @@ projects:
   - path: kubernetes-addons/
     name: "Kubernetes Add-ons"
 
-# Optional: Configure policies for governance
-# policies:
-#   - path: policies/
+
+policies:
+  - path: policies/
 
 # Optional: Global settings
 settings:
