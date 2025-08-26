@@ -1,5 +1,4 @@
-#eks.tf
-# EKS Cluster and related resources
+# Terraform configuration for AWS EKS Cluster with security groups, IAM roles, and KMS encryption
 resource "aws_iam_role" "eks" {
   name               = "${var.env}-${var.eks_name}-eks-cluster"
   assume_role_policy = <<POLICY
