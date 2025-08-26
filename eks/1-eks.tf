@@ -1,4 +1,5 @@
-
+#eks.tf
+# EKS Cluster and related resources
 resource "aws_iam_role" "eks" {
   name               = "${var.env}-${var.eks_name}-eks-cluster"
   assume_role_policy = <<POLICY
