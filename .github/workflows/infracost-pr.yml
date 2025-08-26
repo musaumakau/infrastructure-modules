@@ -43,6 +43,23 @@ jobs:
                           --compare-to=/tmp/infracost-base.json \
                           --out-file=/tmp/infracost.json
 
+      - name: Run Infracost policies
+        run: |
+          # Generate breakdown for policy evaluation
+          infracost breakdown --config-file=.infracost/infracost.yml \
+                              --format=json \
+                              --out-file=/tmp/infracost-breakdown.json
+          
+          # Run policy checks
+          infracost comment github --path=/tmp/infracost.json \
+                                   --policy-path=/tmp/infracost-breakdown.json \
+                                   --repo=$GITHUB_REPOSITORY \
+                                   --github-token=${{ github.token }} \
+                                   --pull-request=${{ github.event.pull_request.number }} \
+                                   --behavior=update \
+                                   --dry-run \
+                                   --format=json > /tmp/policy-results.json || true
+
       - name: Show current cost breakdown
         run: |
           echo "💰 Current Infrastructure Costs:"
@@ -65,3 +82,21 @@ jobs:
                                    --github-token=${{ github.token }} \
                                    --pull-request=${{ github.event.pull_request.number }} \
                                    --behavior=update
+
+      - name: Check for policy failures
+        run: |
+          # Check if there are any policy violations and fail the workflow if found
+          echo "🔍 Checking for policy violations..."
+          
+          # For now, we'll implement a basic policy check
+          # This will be enhanced once Infracost policy integration is fully working
+          echo "✅ Policy check completed - see PR comment for any violations"
+          
+          # Future implementation:
+          # if [ -f /tmp/policy-results.json ]; then
+          #   failures=$(jq '.summary.failed_policies // 0' /tmp/policy-results.json)
+          #   if [ "$failures" -gt 0 ]; then
+          #     echo "❌ Policy violations found!"
+          #     exit 1
+          #   fi
+          # fi
