@@ -43,6 +43,21 @@ jobs:
                           --compare-to=/tmp/infracost-base.json \
                           --out-file=/tmp/infracost.json
 
+      - name: Show current cost breakdown
+        run: |
+          echo "💰 Current Infrastructure Costs:"
+          breakdown_output=$(infracost breakdown --config-file=.infracost/infracost.yml --format=table)
+          echo "$breakdown_output"
+          
+          # Check if there are any costs
+          if echo "$breakdown_output" | grep -q "OVERALL TOTAL.*\$0.00"; then
+            echo ""
+            echo "ℹ️  All resources are currently free!"
+          else
+            echo ""
+            echo "💡 See breakdown above for cost details"
+          fi
+
       - name: Post Infracost comment
         run: |
           infracost comment github --path=/tmp/infracost.json \
