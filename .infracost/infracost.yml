@@ -1,8 +1,24 @@
 version: 0.1
+
+# Configure all your Terraform modules
 projects:
   - path: eks/
-    name: EKS Module
+    name: "EKS Cluster"
+    # Optional: Add terraform variables if needed
+    # terraform_var_files:
+    #   - terraform.tfvars
+    
   - path: vpc/
-    name: VPC Module  
+    name: "VPC Infrastructure"
+    
   - path: kubernetes-addons/
-    name: Kubernetes Addons Module
+    name: "Kubernetes Add-ons"
+
+# Optional: Configure policies for governance
+# policies:
+#   - path: policies/
+
+# Optional: Global settings
+settings:
+  # Show all projects even if cost is $0
+  show_all_projects: true
