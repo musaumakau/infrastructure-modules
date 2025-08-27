@@ -37,33 +37,95 @@ resource_requires_tags(resource) if {
     resource.resource_type in taggable_resources
 }
 
+# Handle both Infracost breakdown format and Terraform plan format
+get_resource_tags(resource) := tags if {
+    # Infracost format
+    tags := resource.tags
+}
+
+get_resource_tags(resource) := tags if {
+    # Terraform plan format - try different possible locations
+    tags := resource.change.after.tags
+}
+
+get_resource_tags(resource) := tags if {
+    # Terraform plan format - alternative location
+    tags := resource.values.tags
+}
+
+get_resource_tags(resource) := {} if {
+    # Default empty if no tags found
+    not resource.tags
+    not resource.change.after.tags
+    not resource.values.tags
+}
+
 # Check if resource has all required tags
 has_required_tags(resource) if {
     resource_requires_tags(resource)
-    resource_tags := object.get(resource, "tags", {})
+    resource_tags := get_resource_tags(resource)
     
     # Check that all required tags are present and not empty
     every tag in required_tags {
         tag in resource_tags
         resource_tags[tag] != ""
+        resource_tags[tag] != null
     }
+}
+
+# Get resource address from different formats
+get_resource_address(resource) := address if {
+    address := resource.address
+}
+
+get_resource_address(resource) := address if {
+    address := resource.name
+}
+
+get_resource_address(resource) := address if {
+    address := sprintf("%s.%s", [resource.type, resource.name])
 }
 
 # Policy rule: FAIL if resource is missing required tags
 deny[msg] if {
+    # Handle Infracost format
+    project := input.projects[_]
+    resource := project.breakdown.resources[_]
+    resource_requires_tags(resource)
+    not has_required_tags(resource)
+    
+    resource_tags := get_resource_tags(resource)
+    missing_tags := required_tags - object.keys(resource_tags)
+    address := get_resource_address(resource)
+    
+    msg := {
+        "msg": sprintf("Resource %s is missing required tags: %s", [
+            address,
+            concat(", ", missing_tags)
+        ]),
+        "resource": address,
+        "resource_type": resource.resource_type,
+        "missing_tags": missing_tags
+    }
+}
+
+# Policy rule for Terraform plan format
+deny[msg] if {
+    # Handle Terraform plan format
     resource := input.resource_changes[_]
     resource_requires_tags(resource)
     not has_required_tags(resource)
     
-    resource_tags := object.get(resource, "tags", {})
+    resource_tags := get_resource_tags(resource)
     missing_tags := required_tags - object.keys(resource_tags)
+    address := get_resource_address(resource)
     
     msg := {
         "msg": sprintf("Resource %s is missing required tags: %s", [
-            resource.address,
+            address,
             concat(", ", missing_tags)
         ]),
-        "resource": resource.address,
+        "resource": address,
         "resource_type": resource.resource_type,
         "missing_tags": missing_tags
     }
@@ -71,20 +133,24 @@ deny[msg] if {
 
 # Policy rule: FAIL for resources with empty tag values
 deny[msg] if {
-    resource := input.resource_changes[_]
+    project := input.projects[_]
+    resource := project.breakdown.resources[_]
     resource_requires_tags(resource)
-    resource_tags := object.get(resource, "tags", {})
+    resource_tags := get_resource_tags(resource)
     
     some tag in required_tags
     tag in resource_tags
-    resource_tags[tag] == ""
+    tag_value := resource_tags[tag]
+    any([tag_value == "", tag_value == null])
+    
+    address := get_resource_address(resource)
     
     msg := {
         "msg": sprintf("Resource %s has empty value for required tag: %s", [
-            resource.address,
+            address,
             tag
         ]),
-        "resource": resource.address,
+        "resource": address,
         "resource_type": resource.resource_type,
         "empty_tag": tag
     }
@@ -92,20 +158,23 @@ deny[msg] if {
 
 # Policy rule: WARN for non-standard Environment values
 warn[msg] if {
-    resource := input.resource_changes[_]
+    project := input.projects[_]
+    resource := project.breakdown.resources[_]
     resource_requires_tags(resource)
-    resource_tags := object.get(resource, "tags", {})
+    resource_tags := get_resource_tags(resource)
     
     "Environment" in resource_tags
     environment := resource_tags["Environment"]
     not environment in {"dev", "staging", "prod", "test"}
     
+    address := get_resource_address(resource)
+    
     msg := {
         "msg": sprintf("Resource %s has non-standard Environment tag value: %s. Expected: dev, staging, prod, or test", [
-            resource.address,
+            address,
             environment
         ]),
-        "resource": resource.address,
+        "resource": address,
         "environment_value": environment
     }
 }
