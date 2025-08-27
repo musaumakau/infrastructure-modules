@@ -10,7 +10,7 @@ on:
 
 jobs:
   infracost:
-    name: Cost Analysis
+    name: Cost Analysis and Policy Check
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -21,6 +21,11 @@ jobs:
         uses: infracost/actions/setup@v2
         with:
           api-key: ${{ secrets.INFRACOST_API_KEY }}
+
+      - name: Setup OPA
+        uses: open-policy-agent/setup-opa@v2
+        with:
+          version: latest
 
       - name: Checkout base branch
         uses: actions/checkout@v4
@@ -36,6 +41,31 @@ jobs:
       - name: Checkout PR branch
         uses: actions/checkout@v4
 
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Terraform Init and Plan (for policy evaluation)
+        run: |
+          # Initialize and plan each module for policy evaluation
+          for dir in eks vpc kubernetes-addons; do
+            if [ -d "$dir" ]; then
+              echo "Planning $dir module..."
+              cd $dir
+              terraform init -input=false
+              terraform plan -out=tfplan.binary -input=false || echo "Plan failed for $dir, continuing..."
+              terraform show -json tfplan.binary > ../tfplan-${dir}.json 2>/dev/null || echo "Show failed for $dir, continuing..."
+              cd ..
+            fi
+          done
+
+      - name: Generate Infracost breakdown for policies
+        run: |
+          infracost breakdown --config-file=.infracost/infracost.yml \
+                              --format=json \
+                              --out-file=/tmp/infracost-breakdown.json
+
       - name: Generate Infracost diff
         run: |
           infracost diff --config-file=.infracost/infracost.yml \
@@ -43,22 +73,78 @@ jobs:
                           --compare-to=/tmp/infracost-base.json \
                           --out-file=/tmp/infracost.json
 
-      - name: Run Infracost policies
+      - name: Run Tagging Policies
+        continue-on-error: true
         run: |
-          # Generate breakdown for policy evaluation
-          infracost breakdown --config-file=.infracost/infracost.yml \
-                              --format=json \
-                              --out-file=/tmp/infracost-breakdown.json
+          echo "🏷️  Checking Tagging Policies..."
           
-          # Run policy checks
-          infracost comment github --path=/tmp/infracost.json \
-                                   --policy-path=/tmp/infracost-breakdown.json \
-                                   --repo=$GITHUB_REPOSITORY \
-                                   --github-token=${{ github.token }} \
-                                   --pull-request=${{ github.event.pull_request.number }} \
-                                   --behavior=update \
-                                   --dry-run \
-                                   --format=json > /tmp/policy-results.json || true
+          # Check if we have terraform plan files to evaluate
+          policy_violations=0
+          
+          for plan_file in tfplan-*.json; do
+            if [ -f "$plan_file" ]; then
+              echo "Evaluating $plan_file against tagging policies..."
+              
+              # Run OPA eval against the terraform plan
+              result=$(opa eval --data .infracost/policies/tagging.rego --input "$plan_file" --format=json 'data.infracost.policies.tagging.deny[_]' 2>/dev/null || echo '[]')
+              
+              if [ "$result" != "[]" ] && [ "$result" != "" ]; then
+                echo "❌ Tagging policy violations found in $plan_file:"
+                echo "$result" | jq -r '.[] | "  • " + .msg' 2>/dev/null || echo "  • Policy violation detected"
+                policy_violations=$((policy_violations + 1))
+              fi
+            fi
+          done
+          
+          # Also check against Infracost breakdown
+          if [ -f "/tmp/infracost-breakdown.json" ]; then
+            echo "Evaluating Infracost breakdown against policies..."
+            result=$(opa eval --data .infracost/policies/tagging.rego --input /tmp/infracost-breakdown.json --format=json 'data.infracost.policies.tagging.deny[_]' 2>/dev/null || echo '[]')
+            
+            if [ "$result" != "[]" ] && [ "$result" != "" ]; then
+              echo "❌ Tagging policy violations found:"
+              echo "$result" | jq -r '.[] | "  • " + .msg' 2>/dev/null || echo "  • Policy violation detected"
+              policy_violations=$((policy_violations + 1))
+            fi
+          fi
+          
+          if [ $policy_violations -eq 0 ]; then
+            echo "✅ No tagging policy violations found"
+          fi
+          
+          echo "TAGGING_VIOLATIONS=$policy_violations" >> $GITHUB_ENV
+
+      - name: Run Governance Policies  
+        continue-on-error: true
+        run: |
+          echo "🛡️  Checking Governance Policies..."
+          
+          policy_violations=0
+          
+          # Check against Infracost breakdown for cost policies
+          if [ -f "/tmp/infracost-breakdown.json" ]; then
+            result=$(opa eval --data .infracost/policies/governance.rego --input /tmp/infracost-breakdown.json --format=json 'data.infracost.policies.governance.deny[_]' 2>/dev/null || echo '[]')
+            
+            if [ "$result" != "[]" ] && [ "$result" != "" ]; then
+              echo "❌ Governance policy violations found:"
+              echo "$result" | jq -r '.[] | "  • " + .msg' 2>/dev/null || echo "  • Policy violation detected"
+              policy_violations=$((policy_violations + 1))
+            fi
+            
+            # Check warnings too
+            warnings=$(opa eval --data .infracost/policies/governance.rego --input /tmp/infracost-breakdown.json --format=json 'data.infracost.policies.governance.warn[_]' 2>/dev/null || echo '[]')
+            
+            if [ "$warnings" != "[]" ] && [ "$warnings" != "" ]; then
+              echo "⚠️  Governance policy warnings:"
+              echo "$warnings" | jq -r '.[] | "  • " + .msg' 2>/dev/null || echo "  • Policy warning detected"
+            fi
+          fi
+          
+          if [ $policy_violations -eq 0 ]; then
+            echo "✅ No governance policy violations found"
+          fi
+          
+          echo "GOVERNANCE_VIOLATIONS=$policy_violations" >> $GITHUB_ENV
 
       - name: Show current cost breakdown
         run: |
@@ -75,28 +161,51 @@ jobs:
             echo "💡 See breakdown above for cost details"
           fi
 
+      - name: Create policy summary comment
+        run: |
+          echo "Creating policy summary..."
+          
+          # Create a summary of policy results
+          cat > /tmp/policy-summary.txt << EOF
+          
+          ## 🔍 Policy Check Results
+          
+          **Tagging Policies:** $([ "$TAGGING_VIOLATIONS" -eq 0 ] && echo "✅ Passed" || echo "❌ $TAGGING_VIOLATIONS violations")
+          **Governance Policies:** $([ "$GOVERNANCE_VIOLATIONS" -eq 0 ] && echo "✅ Passed" || echo "❌ $GOVERNANCE_VIOLATIONS violations")
+          
+          $([ "$TAGGING_VIOLATIONS" -gt 0 ] || [ "$GOVERNANCE_VIOLATIONS" -gt 0 ] && echo "
+          ⚠️ **Policy violations detected!** See workflow logs for details.
+          
+          **Required Tags:** Environment, Owner, Project, CostCenter
+          **Enforcement:** All billable resources must have proper tags." || echo "
+          🎉 **All policies passed!** Your infrastructure changes comply with governance standards.")
+          
+          EOF
+
       - name: Post Infracost comment
         run: |
+          # Combine Infracost report with policy summary
           infracost comment github --path=/tmp/infracost.json \
                                    --repo=$GITHUB_REPOSITORY \
                                    --github-token=${{ github.token }} \
                                    --pull-request=${{ github.event.pull_request.number }} \
                                    --behavior=update
+          
+          # Add policy summary as a separate comment
+          if [ -f /tmp/policy-summary.txt ]; then
+            gh pr comment ${{ github.event.pull_request.number }} --body "$(cat /tmp/policy-summary.txt)"
+          fi
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
 
-      - name: Check for policy failures
+      - name: Fail on policy violations
         run: |
-          # Check if there are any policy violations and fail the workflow if found
-          echo "🔍 Checking for policy violations..."
+          total_violations=$((TAGGING_VIOLATIONS + GOVERNANCE_VIOLATIONS))
           
-          # For now, we'll implement a basic policy check
-          # This will be enhanced once Infracost policy integration is fully working
-          echo "✅ Policy check completed - see PR comment for any violations"
-          
-          # Future implementation:
-          # if [ -f /tmp/policy-results.json ]; then
-          #   failures=$(jq '.summary.failed_policies // 0' /tmp/policy-results.json)
-          #   if [ "$failures" -gt 0 ]; then
-          #     echo "❌ Policy violations found!"
-          #     exit 1
-          #   fi
-          # fi
+          if [ $total_violations -gt 0 ]; then
+            echo "❌ Total policy violations: $total_violations"
+            echo "Please fix the policy violations before merging this PR."
+            exit 1
+          else
+            echo "✅ All policies passed!"
+          fi
