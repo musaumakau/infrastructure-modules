@@ -1,6 +1,7 @@
 variable "env" {
   description = "Environment name"
   type        = string
+  default     = "env"
 }
 
 variable "vpc_id" {
@@ -11,11 +12,13 @@ variable "vpc_id" {
 variable "eks_name" {
   description = "Name of the cluster"
   type        = string
+  default     = "demo"
 }
 
 variable "eks_version" {
   description = "Desired Kubernetes version for the master"
   type        = string
+  default     = "1.33"
 }
 
 variable "subnet_ids" {
