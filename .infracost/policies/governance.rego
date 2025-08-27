@@ -14,21 +14,52 @@ cost_limits := {
     "aws_opensearch_domain": 800
 }
 
+# Get resource address from different formats  
+get_resource_address(resource) := address if {
+    address := resource.address
+}
+
+get_resource_address(resource) := address if {
+    address := resource.name
+}
+
+get_resource_address(resource) := address if {
+    address := sprintf("%s.%s", [resource.type, resource.name])
+}
+
+# Get monthly cost from resource
+get_monthly_cost(resource) := cost if {
+    cost := resource.monthly_cost
+}
+
+get_monthly_cost(resource) := cost if {
+    cost := resource.monthlyCost
+}
+
+get_monthly_cost(resource) := 0 if {
+    not resource.monthly_cost
+    not resource.monthlyCost
+}
+
 # FAIL: Deny expensive resources that exceed cost limits
 deny[msg] if {
-    resource := input.resource_changes[_]
+    # Handle Infracost breakdown format
+    project := input.projects[_]
+    resource := project.breakdown.resources[_]
     resource.resource_type in cost_limits
-    monthly_cost := resource.monthly_cost
+    monthly_cost := get_monthly_cost(resource)
     limit := cost_limits[resource.resource_type]
     monthly_cost > limit
     
+    address := get_resource_address(resource)
+    
     msg := {
         "msg": sprintf("Resource %s monthly cost $%.2f exceeds limit of $%.2f", [
-            resource.address,
+            address,
             monthly_cost,
             limit
         ]),
-        "resource": resource.address,
+        "resource": address,
         "monthly_cost": monthly_cost,
         "cost_limit": limit
     }
@@ -36,73 +67,106 @@ deny[msg] if {
 
 # WARN: Resources approaching cost limits (80% of limit)
 warn[msg] if {
-    resource := input.resource_changes[_]
+    project := input.projects[_]
+    resource := project.breakdown.resources[_]
     resource.resource_type in cost_limits
-    monthly_cost := resource.monthly_cost
+    monthly_cost := get_monthly_cost(resource)
     limit := cost_limits[resource.resource_type]
     monthly_cost > (limit * 0.8)
     monthly_cost <= limit
     
+    address := get_resource_address(resource)
+    
     msg := {
         "msg": sprintf("Resource %s monthly cost $%.2f is approaching limit of $%.2f (%.0f%% of limit)", [
-            resource.address,
+            address,
             monthly_cost,
             limit,
             (monthly_cost / limit) * 100
         ]),
-        "resource": resource.address,
+        "resource": address,
         "monthly_cost": monthly_cost,
         "cost_limit": limit
     }
 }
 
-# FAIL: S3 bucket naming convention
+# FAIL: S3 bucket naming convention (from Terraform plan)
 deny[msg] if {
     resource := input.resource_changes[_]
-    resource.resource_type == "aws_s3_bucket"
-    not regex.match("^[a-z0-9][a-z0-9.-]*[a-z0-9]$", resource.name)
+    resource.type == "aws_s3_bucket"
+    bucket_name := resource.change.after.bucket
+    not regex.match("^[a-z0-9][a-z0-9.-]*[a-z0-9]$", bucket_name)
+    
+    address := get_resource_address(resource)
     
     msg := {
-        "msg": sprintf("S3 bucket %s name must follow naming convention (lowercase, alphanumeric, dots, hyphens)", [
-            resource.address
+        "msg": sprintf("S3 bucket %s name '%s' must follow naming convention (lowercase, alphanumeric, dots, hyphens)", [
+            address,
+            bucket_name
         ]),
-        "resource": resource.address,
-        "bucket_name": resource.name
+        "resource": address,
+        "bucket_name": bucket_name
     }
 }
 
-# FAIL: Prevent unencrypted S3 buckets (if encryption settings are available)
-deny[msg] if {
-    resource := input.resource_changes[_]
-    resource.resource_type == "aws_s3_bucket"
-    # This is a simplified check - adjust based on your Terraform structure
-    not resource.server_side_encryption_configuration
-    
-    msg := {
-        "msg": sprintf("S3 bucket %s must have server-side encryption enabled", [
-            resource.address
-        ]),
-        "resource": resource.address
-    }
-}
-
-# WARN: Large instance types that might be oversized
+# WARN: Large instance types that might be oversized (from Terraform plan)
 warn[msg] if {
     resource := input.resource_changes[_]
-    resource.resource_type == "aws_instance"
+    resource.type == "aws_instance"
+    instance_type := resource.change.after.instance_type
     large_instance_types := {
         "m5.4xlarge", "m5.8xlarge", "m5.12xlarge", "m5.16xlarge", "m5.24xlarge",
         "c5.4xlarge", "c5.9xlarge", "c5.12xlarge", "c5.18xlarge", "c5.24xlarge",
         "r5.4xlarge", "r5.8xlarge", "r5.12xlarge", "r5.16xlarge", "r5.24xlarge"
     }
-    resource.instance_type in large_instance_types
+    instance_type in large_instance_types
+    
+    address := get_resource_address(resource)
     
     msg := {
         "msg": sprintf("Resource %s uses large instance type %s - verify this sizing is necessary", [
-            resource.address,
-            resource.instance_type
+            address,
+            instance_type
         ]),
-        "resource": resource.address,
-        "instance_type": resource.instance_type
+        "resource": address,
+        "instance_type": instance_type
+    }
+}
+
+# FAIL: Prevent unencrypted EBS volumes (from Terraform plan)
+deny[msg] if {
+    resource := input.resource_changes[_]
+    resource.type == "aws_instance"
+    
+    # Check root block device
+    root_block_device := resource.change.after.root_block_device[0]
+    not root_block_device.encrypted
+    
+    address := get_resource_address(resource)
+    
+    msg := {
+        "msg": sprintf("EC2 instance %s must have encrypted root EBS volume", [
+            address
+        ]),
+        "resource": address
+    }
+}
+
+# WARN: Public subnets for databases (from Terraform plan)
+warn[msg] if {
+    resource := input.resource_changes[_]
+    resource.type in {"aws_db_instance", "aws_rds_cluster"}
+    
+    # Check if publicly accessible
+    publicly_accessible := resource.change.after.publicly_accessible
+    publicly_accessible == true
+    
+    address := get_resource_address(resource)
+    
+    msg := {
+        "msg": sprintf("Database %s should not be publicly accessible for security", [
+            address
+        ]),
+        "resource": address
     }
 }
