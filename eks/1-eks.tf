@@ -1,4 +1,4 @@
-# IAM Role for EKS Cluster
+# IAM Role for EKS Cluster and KMS Key for Secrets Encryption
 resource "aws_iam_role" "eks" {
   name               = "${var.env}-${var.eks_name}-eks-cluster"
   assume_role_policy = <<POLICY
@@ -28,6 +28,11 @@ resource "aws_kms_key" "eks" {
   description             = "KMS key for EKS secrets encryption"
   deletion_window_in_days = 10
   enable_key_rotation     = true
+
+  tags = merge(var.common_tags, {
+    Name = "${var.env}-${var.eks_name}-kms-key"
+    Type = "KMSKey"
+  })
   policy = jsonencode({
     Version = "2012-10-17"
     Id      = "eks-key-policy"
@@ -66,9 +71,10 @@ resource "aws_security_group" "eks_cluster" {
   description = "Security group for EKS cluster control plane"
   vpc_id      = var.vpc_id
 
-  tags = {
+  tags = merge(var.common_tags, {
     Name = "${var.env}-${var.eks_name}-cluster-sg"
-  }
+    Type = "SecurtityGroup"
+  })
 }
 
 resource "aws_security_group" "eks_nodes" {
@@ -76,9 +82,10 @@ resource "aws_security_group" "eks_nodes" {
   description = "Security group for EKS worker nodes"
   vpc_id      = var.vpc_id
 
-  tags = {
+  tags = merge(var.common_tags, {
     Name = "${var.env}-${var.eks_name}-nodes-sg"
-  }
+    Type = "SecurtityGroup"
+  })
 }
 
 # Security Group Rules
@@ -191,10 +198,12 @@ resource "aws_eks_cluster" "this" {
     resources = ["secrets"]
   }
 
-  tags = {
+  tags = merge(var.common_tags, {
+    Name                      = "${var.env}-${var.eks_name}"
+    Type                      = "EKSCluster"
     "checkov:skip=CKV_AWS_39" = "Public endpoint needed for CI/CD and remote management"
     "checkov:skip=CKV_AWS_38" = "Public access from anywhere required for external access"
-  }
+  })
 
   vpc_config {
     endpoint_private_access = true
@@ -215,9 +224,10 @@ resource "aws_eks_access_entry" "local_admin" {
   principal_arn = "arn:aws:iam::649203810550:user/Kay"
   type          = "STANDARD"
 
-  tags = {
+  tags = merge(var.common_tags, {
     Name = "${var.env}-${var.eks_name}-local-admin-access"
-  }
+    Type = "EKSAccessEntry"
+  })
 }
 
 resource "aws_eks_access_entry" "github_actions" {
@@ -225,9 +235,10 @@ resource "aws_eks_access_entry" "github_actions" {
   principal_arn = "arn:aws:iam::649203810550:role/EksOIDCRole"
   type          = "STANDARD"
 
-  tags = {
+  tags = merge(var.common_tags, {
     Name = "${var.env}-${var.eks_name}-github-actions-access"
-  }
+    Type = "EKSAccessEntry"
+  })
 }
 
 resource "aws_eks_access_policy_association" "github_actions" {

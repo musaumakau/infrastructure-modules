@@ -3,9 +3,17 @@ eks_name = "demo"
 eks_version = "1.33"
 # Mock subnet IDs - format matches real AWS subnet IDs
 subnet_ids = ["subnet-0123456789abcdef0", "subnet-0fedcba9876543210"]
+
+common_tags = {
+  Environment = "ci-mock"
+  Owner       = "platform-team"
+  Project     = "infrastructure"
+  CostCenter  = "engineering"
+}
+
 node_groups = {
   main = {
-    instance_types = ["t3.medium"]
+    instance_types = ["t3.small"]
     min_size      = 1
     max_size      = 3
     desired_size  = 2
