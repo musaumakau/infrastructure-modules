@@ -24,6 +24,7 @@ variable "eks_version" {
 variable "subnet_ids" {
   description = "List of subnets IDS, must be in at least two different availability zones"
   type        = list(string)
+  default     = ["subnet-0123456789abcdef0", "subnet-0fedcba9876543210"]
 }
 
 
