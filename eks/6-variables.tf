@@ -52,3 +52,9 @@ variable "eks_allowed_cidrs" {
   type        = list(string)
   default     = ["0.0.0.0/0"] # This allows access from anywhere, adjust as needed for security
 }
+
+variable "common_tags" {
+  description = "Common tags to apply to all resources"
+  type        = map(string)
+  default     = {}
+}
