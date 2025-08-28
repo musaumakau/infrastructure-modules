@@ -1,0 +1,13 @@
+env = "Dev"
+eks_name = "demo"
+eks_version = "1.33"
+# Mock subnet IDs - format matches real AWS subnet IDs
+subnet_ids = ["subnet-0123456789abcdef0", "subnet-0fedcba9876543210"]
+node_groups = {
+  main = {
+    instance_types = ["t3.medium"]
+    min_size      = 1
+    max_size      = 3
+    desired_size  = 2
+  }
+}
