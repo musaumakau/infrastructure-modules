@@ -44,7 +44,20 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_wrapper: false
+          terraform_version: 1.7.5
+
+      # ADD THIS STEP: Setup mock variables for CI
+      - name: Setup mock variables for Terraform modules
+        run: |
+          # Copy example tfvars files to terraform.tfvars for each module
+          for dir in eks vpc kubernetes-addons; do
+            if [ -d "$dir" ] && [ -f "$dir/terraform.tfvars.example" ]; then
+              echo "Setting up variables for $dir module..."
+              cp "$dir/terraform.tfvars.example" "$dir/terraform.tfvars"
+            elif [ -d "$dir" ]; then
+              echo "⚠️  Warning: No terraform.tfvars.example found for $dir module"
+            fi
+          done
 
       - name: Terraform Init and Plan (for policy evaluation)
         run: |
