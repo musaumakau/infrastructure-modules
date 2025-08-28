@@ -98,13 +98,22 @@ jobs:
             if [ -f "$plan_file" ]; then
               echo "Evaluating $plan_file against tagging policies..."
               
-              # Run OPA eval against the terraform plan
-              result=$(opa eval --data .infracost/policies/tagging.rego --input "$plan_file" --format=json 'data.infracost.policies.tagging.deny[_]' 2>/dev/null || echo '[]')
+              # Run OPA eval against the terraform plan with better error handling
+              result=$(opa eval --data .infracost/policies/tagging.rego --input "$plan_file" --format=json 'data.infracost.policies.tagging.deny[_]' 2>&1)
               
-              if [ "$result" != "[]" ] && [ "$result" != "" ]; then
+              echo "DEBUG: Raw result for $plan_file: $result"
+              
+              if [ "$result" != "[]" ] && [ "$result" != "" ] && [ "$result" != "null" ]; then
                 echo "❌ Tagging policy violations found in $plan_file:"
-                echo "$result" | jq -r '.[] | "  • " + .msg' 2>/dev/null || echo "  • Policy violation detected"
+                # Try multiple ways to parse the result
+                echo "$result" | jq -r 'if type == "array" then .[] | "  • " + (.msg // tostring) else "  • " + . end' 2>/dev/null || {
+                  echo "$result" | jq -r '.[] | "  • " + (.msg // .)' 2>/dev/null || {
+                    echo "  • Raw violation: $result"
+                  }
+                }
                 policy_violations=$((policy_violations + 1))
+              else
+                echo "✅ No violations found in $plan_file"
               fi
             fi
           done
@@ -112,12 +121,20 @@ jobs:
           # Also check against Infracost breakdown
           if [ -f "/tmp/infracost-breakdown.json" ]; then
             echo "Evaluating Infracost breakdown against policies..."
-            result=$(opa eval --data .infracost/policies/tagging.rego --input /tmp/infracost-breakdown.json --format=json 'data.infracost.policies.tagging.deny[_]' 2>/dev/null || echo '[]')
+            result=$(opa eval --data .infracost/policies/tagging.rego --input /tmp/infracost-breakdown.json --format=json 'data.infracost.policies.tagging.deny[_]' 2>&1)
             
-            if [ "$result" != "[]" ] && [ "$result" != "" ]; then
+            echo "DEBUG: Raw Infracost result: $result"
+            
+            if [ "$result" != "[]" ] && [ "$result" != "" ] && [ "$result" != "null" ]; then
               echo "❌ Tagging policy violations found:"
-              echo "$result" | jq -r '.[] | "  • " + .msg' 2>/dev/null || echo "  • Policy violation detected"
+              echo "$result" | jq -r 'if type == "array" then .[] | "  • " + (.msg // tostring) else "  • " + . end' 2>/dev/null || {
+                echo "$result" | jq -r '.[] | "  • " + (.msg // .)' 2>/dev/null || {
+                  echo "  • Raw violation: $result"
+                }
+              }
               policy_violations=$((policy_violations + 1))
+            else
+              echo "✅ No violations found in Infracost breakdown"
             fi
           fi
           
