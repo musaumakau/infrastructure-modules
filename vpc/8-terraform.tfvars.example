@@ -1,0 +1,12 @@
+# Mock values for CI/CD
+env = "ci-mock"
+vpc_cidr = "10.0.0.0/16"
+availability_zones = ["eu-west-1a", "eu-west-1b", "eu-west-1c"]
+
+# Required tags for policy compliance
+common_tags = {
+  Environment = "ci-mock"
+  Owner       = "platform-team"
+  Project     = "infrastructure"
+  CostCenter  = "engineering"
+}
