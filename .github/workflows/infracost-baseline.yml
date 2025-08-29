@@ -1,0 +1,24 @@
+name: Infracost Baseline
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'eks/**'
+      - 'vpc/**'
+      - 'kubernetes-addons/**'
+
+jobs:
+  baseline:
+    name: Update Cost Baseline
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Infracost
+        uses: infracost/actions/setup@v2
+        with:
+          api-key: ${{ secrets.INFRACOST_API_KEY }}
+      
+      - name: Generate baseline
+        run: |
+          infracost breakdown --config-file=.infracost/infracost.yml \
+                              --format=table
