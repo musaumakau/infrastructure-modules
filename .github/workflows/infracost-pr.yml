@@ -32,6 +32,12 @@ jobs:
         with:
           ref: '${{ github.event.pull_request.base.ref }}'
 
+      - name: Configure AWS Credentials with OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::649203810550:role/EksOIDCRole
+          aws-region: eu-west-1   
+
       - name: Generate Infracost cost estimate baseline
         run: |
           infracost breakdown --config-file=.infracost/infracost.yml \
