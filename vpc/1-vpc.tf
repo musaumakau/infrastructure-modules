@@ -1,3 +1,4 @@
+# Create a VPC with a restricted default security group allowing only outbound HTTPS traffic.
 resource "aws_vpc" "this" {
   cidr_block = var.vpc_cidr_block
 
