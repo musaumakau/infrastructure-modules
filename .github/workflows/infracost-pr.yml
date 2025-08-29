@@ -46,7 +46,6 @@ jobs:
         with:
           terraform_version: 1.7.5
 
-      # ADD THIS STEP: Setup mock variables for CI
       - name: Debug - Check directory structure
         run: |
           echo "Current directory: $(pwd)"
@@ -67,17 +66,29 @@ jobs:
           # Copy example tfvars files to terraform.tfvars for each module
           for dir in eks vpc kubernetes-addons; do
             if [ -d "$dir" ]; then
-              if [ -f "$dir/terraform.tfvars.example" ]; then
-                echo "Setting up variables for $dir module..."
-                cp "$dir/terraform.tfvars.example" "$dir/terraform.tfvars"
-                echo "Contents of copied file:"
-                head -5 "$dir/terraform.tfvars"
+              echo "Processing $dir module..."
+              
+              # Look for any file ending with terraform.tfvars.example (with or without number prefix)
+              example_file=$(find "$dir" -name "*terraform.tfvars.example" -type f | head -1)
+              
+              if [ -n "$example_file" ]; then
+                echo "✅ Found example file: $example_file"
+                cp "$example_file" "$dir/terraform.tfvars"
+                echo "✅ Copied $(basename "$example_file") to $dir/terraform.tfvars"
+                echo "Contents preview:"
+                head -3 "$dir/terraform.tfvars" | sed 's/^/  /'
               else
-                echo "⚠️  Warning: No terraform.tfvars.example found for $dir module"
-                echo "Files in $dir: $(ls -la $dir/)"
+                echo "⚠️ Warning: No terraform.tfvars.example found for $dir module"
+                echo "Files in $dir:"
+                ls -la "$dir/" | grep -E "\.(tf|tfvars)" || echo "  No .tf or .tfvars files found"
+                
+                # Create empty tfvars file so terraform doesn't fail
+                touch "$dir/terraform.tfvars"
+                echo "✅ Created empty terraform.tfvars for $dir"
               fi
+              echo ""
             else
-              echo "⚠️  Directory $dir does not exist"
+              echo "⚠️ Directory $dir does not exist"
             fi
           done
 
