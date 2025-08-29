@@ -25,4 +25,5 @@ resource "aws_eks_node_group" "this" {
   }
 
   depends_on = [aws_iam_role_policy_attachment.nodes]
+
 }

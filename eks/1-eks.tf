@@ -1,4 +1,4 @@
-# IAM Role for EKS Cluster and KMS Key for Secrets Encryption
+
 resource "aws_iam_role" "eks" {
   name               = "${var.env}-${var.eks_name}-eks-cluster"
   assume_role_policy = <<POLICY
