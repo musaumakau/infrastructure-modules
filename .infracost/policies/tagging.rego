@@ -141,7 +141,7 @@ deny[msg] if {
     some tag in required_tags
     tag in resource_tags
     tag_value := resource_tags[tag]
-    any([tag_value == "", tag_value == null])
+    some([tag_value == "", tag_value == null])
     
     address := get_resource_address(resource)
     
