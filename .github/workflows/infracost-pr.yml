@@ -47,15 +47,37 @@ jobs:
           terraform_version: 1.7.5
 
       # ADD THIS STEP: Setup mock variables for CI
+      - name: Debug - Check directory structure
+        run: |
+          echo "Current directory: $(pwd)"
+          echo "Root directory contents:"
+          ls -la
+          
+          for dir in eks vpc kubernetes-addons; do
+            if [ -d "$dir" ]; then
+              echo "Contents of $dir directory:"
+              ls -la "$dir/"
+            else
+              echo "$dir directory does not exist"
+            fi
+          done
+
       - name: Setup mock variables for Terraform modules
         run: |
           # Copy example tfvars files to terraform.tfvars for each module
           for dir in eks vpc kubernetes-addons; do
-            if [ -d "$dir" ] && [ -f "$dir/terraform.tfvars.example" ]; then
-              echo "Setting up variables for $dir module..."
-              cp "$dir/terraform.tfvars.example" "$dir/terraform.tfvars"
-            elif [ -d "$dir" ]; then
-              echo "⚠️  Warning: No terraform.tfvars.example found for $dir module"
+            if [ -d "$dir" ]; then
+              if [ -f "$dir/terraform.tfvars.example" ]; then
+                echo "Setting up variables for $dir module..."
+                cp "$dir/terraform.tfvars.example" "$dir/terraform.tfvars"
+                echo "Contents of copied file:"
+                head -5 "$dir/terraform.tfvars"
+              else
+                echo "⚠️  Warning: No terraform.tfvars.example found for $dir module"
+                echo "Files in $dir: $(ls -la $dir/)"
+              fi
+            else
+              echo "⚠️  Directory $dir does not exist"
             fi
           done
 
