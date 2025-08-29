@@ -119,63 +119,130 @@ jobs:
                           --compare-to=/tmp/infracost-base.json \
                           --out-file=/tmp/infracost.json
 
-      - name: Run Tagging Policies
+      - name: Debug and Run Tagging Policies
         continue-on-error: true
         run: |
-          echo "🏷️  Checking Tagging Policies..."
+          echo "🏷️ Checking Tagging Policies..."
           
-          # Check if we have terraform plan files to evaluate
+          # Debug: Check if policy files exist
+          echo "📁 Checking policy files:"
+          if [ -f ".infracost/policies/tagging.rego" ]; then
+            echo "✅ tagging.rego found"
+            echo "📄 Policy file size: $(wc -l < .infracost/policies/tagging.rego) lines"
+            echo "📄 First 10 lines of policy:"
+            head -10 .infracost/policies/tagging.rego | sed 's/^/  /'
+          else
+            echo "❌ tagging.rego NOT found"
+            echo "📁 Contents of .infracost/policies/:"
+            ls -la .infracost/policies/ 2>/dev/null || echo "  Directory doesn't exist"
+          fi
+          
+          echo ""
+          echo "📋 Checking Terraform plan files:"
           policy_violations=0
+          untagged_resources=()
           
           for plan_file in tfplan-*.json; do
             if [ -f "$plan_file" ]; then
-              echo "Evaluating $plan_file against tagging policies..."
+              echo "📄 Processing $plan_file..."
               
-              # Run OPA eval against the terraform plan with better error handling
-              result=$(opa eval --data .infracost/policies/tagging.rego --input "$plan_file" --format=json 'data.infracost.policies.tagging.deny[_]' 2>&1)
+              # Check if the JSON file is valid
+              if ! jq empty "$plan_file" 2>/dev/null; then
+                echo "❌ Invalid JSON in $plan_file"
+                echo "📄 File contents preview:"
+                head -5 "$plan_file" | sed 's/^/  /'
+                continue
+              fi
               
-              echo "DEBUG: Raw result for $plan_file: $result"
+              echo "✅ Valid JSON file"
               
-              if [ "$result" != "[]" ] && [ "$result" != "" ] && [ "$result" != "null" ]; then
-                echo "❌ Tagging policy violations found in $plan_file:"
-                # Try multiple ways to parse the result
-                echo "$result" | jq -r 'if type == "array" then .[] | "  • " + (.msg // tostring) else "  • " + . end' 2>/dev/null || {
-                  echo "$result" | jq -r '.[] | "  • " + (.msg // .)' 2>/dev/null || {
-                    echo "  • Raw violation: $result"
-                  }
+              # Extract resources that will be created/updated and check their tags
+              echo "🔍 Analyzing resources in $plan_file for missing tags..."
+              
+              # Find resources without required tags
+              missing_tags=$(jq -r '
+                .resource_changes[]? | 
+                select(.change.actions[]? == "create" or .change.actions[]? == "update") |
+                select(.type | test("aws_(instance|ebs_volume|eks_cluster|eks_node_group|rds_instance|s3_bucket|elasticache|lambda_function|ecs_service|security_group|launch_template)")) |
+                select(.change.after.tags // {} | 
+                  (has("Environment") and has("Owner") and has("Project") and has("CostCenter")) | not
+                ) |
+                {
+                  resource: .address,
+                  type: .type,
+                  missing_tags: (["Environment", "Owner", "Project", "CostCenter"] - (.change.after.tags // {} | keys)),
+                  current_tags: (.change.after.tags // {})
                 }
+              ' "$plan_file" 2>/dev/null || echo '[]')
+              
+              if [ "$missing_tags" != "[]" ] && [ "$missing_tags" != "" ] && [ "$missing_tags" != "null" ]; then
+                echo "❌ Resources with missing required tags found in $plan_file:"
+                echo "$missing_tags" | jq -r '"  🏷️  " + .resource + " (" + .type + ")"'
+                echo "$missing_tags" | jq -r '"     Missing tags: " + (.missing_tags | join(", "))'
+                echo "$missing_tags" | jq -r 'if (.current_tags | length) > 0 then "     Current tags: " + (.current_tags | keys | join(", ")) else "     Current tags: none" end'
+                echo ""
+                
+                # Add to untagged resources array
+                while IFS= read -r resource; do
+                  untagged_resources+=("$resource")
+                done < <(echo "$missing_tags" | jq -r '.resource')
+                
                 policy_violations=$((policy_violations + 1))
               else
-                echo "✅ No violations found in $plan_file"
+                echo "✅ All billable resources properly tagged in $plan_file"
               fi
+              
+              # If OPA policy exists, try to run it with better error handling
+              if [ -f ".infracost/policies/tagging.rego" ]; then
+                echo "🔍 Running OPA policy evaluation for $plan_file..."
+                
+                # Test the policy syntax first
+                if opa fmt .infracost/policies/tagging.rego > /dev/null 2>&1; then
+                  echo "✅ Policy syntax is valid"
+                  
+                  # Run the policy evaluation with detailed error output
+                  opa_result=$(opa eval --data .infracost/policies/tagging.rego --input "$plan_file" --format=json 'data.infracost.policies.tagging.deny[_]' 2>&1)
+                  opa_exit_code=$?
+                  
+                  echo "🔍 OPA exit code: $opa_exit_code"
+                  
+                  if [ $opa_exit_code -eq 0 ]; then
+                    if [ "$opa_result" != "[]" ] && [ "$opa_result" != "" ] && [ "$opa_result" != "null" ]; then
+                      echo "❌ OPA policy violations:"
+                      echo "$opa_result" | jq -r 'if type == "array" then .[] | "  • " + (.msg // tostring) else "  • " + . end' 2>/dev/null || echo "  • $opa_result"
+                    else
+                      echo "✅ No OPA violations found"
+                    fi
+                  else
+                    echo "❌ OPA evaluation failed with exit code $opa_exit_code"
+                    echo "Error details: $opa_result"
+                  fi
+                else
+                  echo "❌ Policy syntax error in tagging.rego"
+                  opa fmt .infracost/policies/tagging.rego 2>&1 | sed 's/^/  /'
+                fi
+              fi
+              
+              echo "----------------------------------------"
             fi
           done
           
-          # Also check against Infracost breakdown
-          if [ -f "/tmp/infracost-breakdown.json" ]; then
-            echo "Evaluating Infracost breakdown against policies..."
-            result=$(opa eval --data .infracost/policies/tagging.rego --input /tmp/infracost-breakdown.json --format=json 'data.infracost.policies.tagging.deny[_]' 2>&1)
-            
-            echo "DEBUG: Raw Infracost result: $result"
-            
-            if [ "$result" != "[]" ] && [ "$result" != "" ] && [ "$result" != "null" ]; then
-              echo "❌ Tagging policy violations found:"
-              echo "$result" | jq -r 'if type == "array" then .[] | "  • " + (.msg // tostring) else "  • " + . end' 2>/dev/null || {
-                echo "$result" | jq -r '.[] | "  • " + (.msg // .)' 2>/dev/null || {
-                  echo "  • Raw violation: $result"
-                }
-              }
-              policy_violations=$((policy_violations + 1))
-            else
-              echo "✅ No violations found in Infracost breakdown"
-            fi
-          fi
-          
-          if [ $policy_violations -eq 0 ]; then
-            echo "✅ No tagging policy violations found"
+          # Summary of untagged resources
+          if [ ${#untagged_resources[@]} -gt 0 ]; then
+            echo ""
+            echo "📊 SUMMARY: Resources Missing Required Tags"
+            echo "=============================================="
+            printf '%s\n' "${untagged_resources[@]}" | sort | uniq
+            echo ""
+            echo "🏷️ Required tags: Environment, Owner, Project, CostCenter"
+            echo "📝 Add these tags to your Terraform resources to pass policy checks."
+          else
+            echo ""
+            echo "🎉 All resources have the required tags!"
           fi
           
           echo "TAGGING_VIOLATIONS=$policy_violations" >> $GITHUB_ENV
+          echo "UNTAGGED_RESOURCE_COUNT=${#untagged_resources[@]}" >> $GITHUB_ENV
 
       - name: Run Governance Policies  
         continue-on-error: true
@@ -186,21 +253,46 @@ jobs:
           
           # Check against Infracost breakdown for cost policies
           if [ -f "/tmp/infracost-breakdown.json" ]; then
-            result=$(opa eval --data .infracost/policies/governance.rego --input /tmp/infracost-breakdown.json --format=json 'data.infracost.policies.governance.deny[_]' 2>/dev/null || echo '[]')
-            
-            if [ "$result" != "[]" ] && [ "$result" != "" ]; then
-              echo "❌ Governance policy violations found:"
-              echo "$result" | jq -r '.[] | "  • " + .msg' 2>/dev/null || echo "  • Policy violation detected"
-              policy_violations=$((policy_violations + 1))
+            # Validate JSON first
+            if ! jq empty /tmp/infracost-breakdown.json 2>/dev/null; then
+              echo "❌ Invalid JSON in infracost-breakdown.json"
+              echo "GOVERNANCE_VIOLATIONS=1" >> $GITHUB_ENV
+              exit 0
             fi
             
-            # Check warnings too
-            warnings=$(opa eval --data .infracost/policies/governance.rego --input /tmp/infracost-breakdown.json --format=json 'data.infracost.policies.governance.warn[_]' 2>/dev/null || echo '[]')
-            
-            if [ "$warnings" != "[]" ] && [ "$warnings" != "" ]; then
-              echo "⚠️  Governance policy warnings:"
-              echo "$warnings" | jq -r '.[] | "  • " + .msg' 2>/dev/null || echo "  • Policy warning detected"
+            if [ -f ".infracost/policies/governance.rego" ]; then
+              # Test policy syntax
+              if opa fmt .infracost/policies/governance.rego > /dev/null 2>&1; then
+                result=$(opa eval --data .infracost/policies/governance.rego --input /tmp/infracost-breakdown.json --format=json 'data.infracost.policies.governance.deny[_]' 2>&1)
+                opa_exit_code=$?
+                
+                if [ $opa_exit_code -eq 0 ]; then
+                  if [ "$result" != "[]" ] && [ "$result" != "" ]; then
+                    echo "❌ Governance policy violations found:"
+                    echo "$result" | jq -r '.[] | "  • " + .msg' 2>/dev/null || echo "  • Policy violation detected"
+                    policy_violations=$((policy_violations + 1))
+                  fi
+                  
+                  # Check warnings too
+                  warnings=$(opa eval --data .infracost/policies/governance.rego --input /tmp/infracost-breakdown.json --format=json 'data.infracost.policies.governance.warn[_]' 2>/dev/null || echo '[]')
+                  
+                  if [ "$warnings" != "[]" ] && [ "$warnings" != "" ]; then
+                    echo "⚠️  Governance policy warnings:"
+                    echo "$warnings" | jq -r '.[] | "  • " + .msg' 2>/dev/null || echo "  • Policy warning detected"
+                  fi
+                else
+                  echo "❌ OPA governance evaluation failed with exit code $opa_exit_code"
+                  echo "Error: $result"
+                fi
+              else
+                echo "❌ Governance policy syntax error"
+                opa fmt .infracost/policies/governance.rego 2>&1 | sed 's/^/  /'
+              fi
+            else
+              echo "⚠️ governance.rego policy file not found"
             fi
+          else
+            echo "⚠️ Infracost breakdown file not found"
           fi
           
           if [ $policy_violations -eq 0 ]; then
@@ -233,14 +325,19 @@ jobs:
           
           ## 🔍 Policy Check Results
           
-          **Tagging Policies:** $([ "$TAGGING_VIOLATIONS" -eq 0 ] && echo "✅ Passed" || echo "❌ $TAGGING_VIOLATIONS violations")
-          **Governance Policies:** $([ "$GOVERNANCE_VIOLATIONS" -eq 0 ] && echo "✅ Passed" || echo "❌ $GOVERNANCE_VIOLATIONS violations")
+          **Tagging Policies:** $([ "${TAGGING_VIOLATIONS:-0}" -eq 0 ] && echo "✅ Passed" || echo "❌ ${TAGGING_VIOLATIONS} violations")
+          **Governance Policies:** $([ "${GOVERNANCE_VIOLATIONS:-0}" -eq 0 ] && echo "✅ Passed" || echo "❌ ${GOVERNANCE_VIOLATIONS} violations")
           
-          $([ "$TAGGING_VIOLATIONS" -gt 0 ] || [ "$GOVERNANCE_VIOLATIONS" -gt 0 ] && echo "
-          ⚠️ **Policy violations detected!** See workflow logs for details.
+          $([ "${UNTAGGED_RESOURCE_COUNT:-0}" -gt 0 ] && echo "
+          🏷️ **Untagged Resources:** ${UNTAGGED_RESOURCE_COUNT} resources missing required tags
           
           **Required Tags:** Environment, Owner, Project, CostCenter
-          **Enforcement:** All billable resources must have proper tags." || echo "
+          **Fix:** Add these tags to your Terraform resources." || echo "")
+          
+          $([ "${TAGGING_VIOLATIONS:-0}" -gt 0 ] || [ "${GOVERNANCE_VIOLATIONS:-0}" -gt 0 ] && echo "
+          ⚠️ **Policy violations detected!** See workflow logs for details.
+          
+          **Enforcement:** All billable resources must comply with governance standards." || echo "
           🎉 **All policies passed!** Your infrastructure changes comply with governance standards.")
           
           EOF
@@ -263,10 +360,15 @@ jobs:
 
       - name: Fail on policy violations
         run: |
-          total_violations=$((TAGGING_VIOLATIONS + GOVERNANCE_VIOLATIONS))
+          total_violations=$((${TAGGING_VIOLATIONS:-0} + ${GOVERNANCE_VIOLATIONS:-0}))
           
           if [ $total_violations -gt 0 ]; then
             echo "❌ Total policy violations: $total_violations"
+            echo "📋 Breakdown:"
+            echo "  - Tagging violations: ${TAGGING_VIOLATIONS:-0}"
+            echo "  - Governance violations: ${GOVERNANCE_VIOLATIONS:-0}"
+            echo "  - Untagged resources: ${UNTAGGED_RESOURCE_COUNT:-0}"
+            echo ""
             echo "Please fix the policy violations before merging this PR."
             exit 1
           else
