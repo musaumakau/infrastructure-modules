@@ -7,8 +7,7 @@ on:
       - 'eks/**'
       - 'vpc/**'
       - 'kubernetes-addons/**'
-      - '.infracost/**'
-  
+
 jobs:
   infracost:
     name: Cost Analysis and Policy Check
