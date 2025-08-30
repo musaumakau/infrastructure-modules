@@ -40,9 +40,10 @@ resource "aws_kms_key" "cloudwatch_logs" {
     ]
   })
 
-  tags = {
+  tags = merge(var.common_tags, {
     Name = "${var.env}-cloudwatch-logs-key"
-  }
+    Type = "KMSKey"
+  })
 }
 
 resource "aws_kms_alias" "cloudwatch_logs" {
@@ -56,9 +57,10 @@ resource "aws_cloudwatch_log_group" "vpc_flow_log" {
   retention_in_days = 365 # 1 year retention
   kms_key_id        = aws_kms_key.cloudwatch_logs.arn
 
-  tags = {
+  tags = merge(var.common_tags, {
     Name = "${var.env}-vpc-flow-logs"
-  }
+    Type = "LogGroup"
+  })
 }
 
 # VPC Flow Log
@@ -68,9 +70,9 @@ resource "aws_flow_log" "vpc_flow_log" {
   traffic_type    = "ALL"
   vpc_id          = aws_vpc.this.id
 
-  tags = {
+  tags = merge(var.common_tags, {
     Name = "${var.env}-vpc-flow-log"
-  }
+  })
 }
 
 # IAM Role for VPC Flow Logs
@@ -90,9 +92,10 @@ resource "aws_iam_role" "flow_log_role" {
     ]
   })
 
-  tags = {
+  tags = merge(var.common_tags, {
     Name = "${var.env}-flow-log-role"
-  }
+    Type = "IAMRole"
+  })
 }
 
 # IAM Policy with specific resource constraints

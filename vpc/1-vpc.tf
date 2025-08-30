@@ -1,12 +1,14 @@
+
 resource "aws_vpc" "this" {
   cidr_block = var.vpc_cidr_block
 
   enable_dns_hostnames = true
   enable_dns_support   = true
 
-  tags = {
+  tags = merge(var.common_tags, {
     Name = "${var.env}-main"
-  }
+    Type = "VPC"
+  })
 }
 
 resource "aws_default_security_group" "default" {
@@ -29,8 +31,9 @@ resource "aws_default_security_group" "default" {
     }
   ]
 
-  tags = {
+  tags = merge(var.common_tags, {
     Name = "${var.env}-default-sg-restricted"
-  }
+    Type = "SecurityGroup"
+  })
 }
 
