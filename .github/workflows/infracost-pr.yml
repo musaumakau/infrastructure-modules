@@ -8,15 +8,13 @@ on:
       - 'vpc/**'
       - 'kubernetes-addons/**'
       - '.infracost/**'
-permissions:
-  id-token: write
-  contents: read
   
 jobs:
   infracost:
     name: Cost Analysis and Policy Check
     runs-on: ubuntu-latest
     permissions:
+      id-token: write
       contents: read
       pull-requests: write
 
