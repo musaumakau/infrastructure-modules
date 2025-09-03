@@ -1,9 +1,7 @@
 resource "aws_launch_template" "eks_nodes" {
   for_each = var.node_groups
 
-  name_prefix   = "${var.env}-${var.eks_name}-${each.key}-"
-  image_id      = data.aws_ssm_parameter.eks_ami_release_version.value
-  instance_type = each.value.instance_types[0] # Use first instance type as default
+  name_prefix = "${var.env}-${var.eks_name}-${each.key}-"
 
   vpc_security_group_ids = [aws_security_group.eks_nodes.id]
 
@@ -17,24 +15,17 @@ resource "aws_launch_template" "eks_nodes" {
     }
   }
 
-  user_data = base64encode(templatefile("${path.module}/userdata.sh", {
-    cluster_name          = aws_eks_cluster.this.name
-    endpoint              = aws_eks_cluster.this.endpoint
-    certificate_authority = aws_eks_cluster.this.certificate_authority[0].data
-  }))
+  metadata_options {
+    http_endpoint               = "enabled"
+    http_tokens                 = "required"
+    http_put_response_hop_limit = 2
+  }
 
   tags = merge(var.common_tags, {
     Name = "${var.env}-${var.eks_name}-${each.key}-launch-template"
     Type = "EKSLaunchTemplate"
   })
 }
-
-# Data source to get the latest EKS optimized AMI
-data "aws_ssm_parameter" "eks_ami_release_version" {
-  name = "/aws/service/eks/optimized-ami/${aws_eks_cluster.this.version}/amazon-linux-2/recommended/image_id"
-}
-
-
 
 resource "aws_eks_node_group" "this" {
   for_each = var.node_groups
