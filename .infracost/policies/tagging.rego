@@ -29,32 +29,37 @@ taggable_resources := {
     "aws_elb",
     "aws_lb",
     "aws_nat_gateway",
-    "aws_eip"
+    "aws_eip",
+    "aws_security_group"   # ✅ SGs can be tagged, SG rules cannot
+}
+
+# Extract the type regardless of input format
+get_resource_type(resource) := t if {
+    t := resource.resource_type
+} else {
+    t := resource.type
 }
 
 # Check if resource type requires tagging
 resource_requires_tags(resource) if {
-    resource.resource_type in taggable_resources
+    t := get_resource_type(resource)
+    t in taggable_resources
 }
 
 # Handle both Infracost breakdown format and Terraform plan format
 get_resource_tags(resource) := tags if {
-    # Infracost format
     tags := resource.tags
 }
 
 get_resource_tags(resource) := tags if {
-    # Terraform plan format - try different possible locations
     tags := resource.change.after.tags
 }
 
 get_resource_tags(resource) := tags if {
-    # Terraform plan format - alternative location
     tags := resource.values.tags
 }
 
 get_resource_tags(resource) := {} if {
-    # Default empty if no tags found
     not resource.tags
     not resource.change.after.tags
     not resource.values.tags
@@ -65,7 +70,6 @@ has_required_tags(resource) if {
     resource_requires_tags(resource)
     resource_tags := get_resource_tags(resource)
     
-    # Check that all required tags are present and not empty
     every tag in required_tags {
         tag in resource_tags
         resource_tags[tag] != ""
@@ -88,7 +92,6 @@ get_resource_address(resource) := address if {
 
 # Policy rule: FAIL if resource is missing required tags
 deny[msg] if {
-    # Handle Infracost format
     project := input.projects[_]
     resource := project.breakdown.resources[_]
     resource_requires_tags(resource)
@@ -104,14 +107,13 @@ deny[msg] if {
             concat(", ", missing_tags)
         ]),
         "resource": address,
-        "resource_type": resource.resource_type,
+        "resource_type": get_resource_type(resource),
         "missing_tags": missing_tags
     }
 }
 
 # Policy rule for Terraform plan format
 deny[msg] if {
-    # Handle Terraform plan format
     resource := input.resource_changes[_]
     resource_requires_tags(resource)
     not has_required_tags(resource)
@@ -126,7 +128,7 @@ deny[msg] if {
             concat(", ", missing_tags)
         ]),
         "resource": address,
-        "resource_type": resource.resource_type,
+        "resource_type": get_resource_type(resource),
         "missing_tags": missing_tags
     }
 }
@@ -143,8 +145,6 @@ deny[msg] if {
     tag_value := resource_tags[tag]
     tag_value in {"", null}  
     
-    #tag_value == "" or tag_value == null   
-    
     address := get_resource_address(resource)
     
     msg := {
@@ -153,7 +153,7 @@ deny[msg] if {
             tag
         ]),
         "resource": address,
-        "resource_type": resource.resource_type,
+        "resource_type": get_resource_type(resource),
         "empty_tag": tag
     }
 }
