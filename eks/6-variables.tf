@@ -36,10 +36,24 @@ variable "node_iam_policies" {
   }
 }
 
+
 variable "node_groups" {
-  description = "EKS node groups"
-  type        = map(any)
+  description = "EKS node groups configuration"
+  type = map(object({
+    capacity_type  = string
+    instance_types = list(string)
+    disk_size      = number
+    scaling_config = object({
+      desired_size = number
+      max_size     = number
+      min_size     = number
+    })
+  }))
 }
+# variable "node_groups" {
+#   description = "EKS node groups"
+#   type        = map(any)
+# }
 
 variable "enable_irsa" {
   description = "Determines whether to create an OpenID Connect provider for EKS"
