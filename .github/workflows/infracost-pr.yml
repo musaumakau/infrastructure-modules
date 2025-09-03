@@ -166,11 +166,12 @@ jobs:
               # Extract resources that will be created/updated and check their tags
               echo "🔍 Analyzing resources in $plan_file for missing tags..."
               
-              # Find resources without required tags
+              # Find resources without required tags (exclude security group rules)
               missing_tags=$(jq -r '
                 .resource_changes[]? | 
                 select(.change.actions[]? == "create" or .change.actions[]? == "update") |
                 select(.type | test("aws_(instance|ebs_volume|eks_cluster|eks_node_group|rds_instance|s3_bucket|elasticache|lambda_function|ecs_service|security_group|launch_template)")) |
+                select(.type != "aws_security_group_rule") |
                 select(.change.after.tags // {} | 
                   (has("Environment") and has("Owner") and has("Project") and has("CostCenter")) | not
                 ) |
@@ -243,6 +244,7 @@ jobs:
             echo ""
             echo "🏷️ Required tags: Environment, Owner, Project, CostCenter"
             echo "📝 Add these tags to your Terraform resources to pass policy checks."
+            echo "ℹ️ Note: Security group rules are excluded as they don't support tags."
           else
             echo ""
             echo "🎉 All resources have the required tags!"
@@ -339,7 +341,8 @@ jobs:
           🏷️ **Untagged Resources:** ${UNTAGGED_RESOURCE_COUNT} resources missing required tags
           
           **Required Tags:** Environment, Owner, Project, CostCenter
-          **Fix:** Add these tags to your Terraform resources." || echo "")
+          **Fix:** Add these tags to your Terraform resources.
+          **Note:** Security group rules are excluded as they don't support tags." || echo "")
           
           $([ "${TAGGING_VIOLATIONS:-0}" -gt 0 ] || [ "${GOVERNANCE_VIOLATIONS:-0}" -gt 0 ] && echo "
           ⚠️ **Policy violations detected!** See workflow logs for details.
