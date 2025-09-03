@@ -36,7 +36,7 @@ jobs:
       - name: Configure AWS Credentials with OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::649203810550:role/EksOIDCRole
+          role-to-assume: arn:aws:iam::649203810550:role/EKSOIDCRoleForPR
           aws-region: eu-west-1   
 
       - name: Generate Infracost cost estimate baseline
