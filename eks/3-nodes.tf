@@ -59,5 +59,9 @@ resource "aws_eks_node_group" "this" {
   }
 
   depends_on = [aws_iam_role_policy_attachment.nodes]
+  tags = merge(var.common_tags, {
+    Name = "${var.env}-${var.eks_name}-${each.key}-node-group"
+    Type = "EKSNodeGroup"
+  })
 
 }
