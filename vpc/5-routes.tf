@@ -7,10 +7,11 @@ resource "aws_route_table" "private" {
 
   }
 
-  tags = {
+  tags = merge(var.common_tags, {
     "Name" = "${var.env}-private"
+    "Type" = "PrivateRouteTable"
 
-  }
+  })
 }
 
 resource "aws_route_table" "public" {
@@ -21,9 +22,10 @@ resource "aws_route_table" "public" {
     gateway_id = aws_internet_gateway.this.id
   }
 
-  tags = {
+  tags = merge(var.common_tags, {
     "Name" = "${var.env}-public"
-  }
+    "Type" = "PublicRouteTable"
+  })
 }
 
 resource "aws_route_table_association" "private" {

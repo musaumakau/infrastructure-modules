@@ -1,25 +1,39 @@
+# Create a VPC with DNS support and a restricted default security group
 resource "aws_vpc" "this" {
   cidr_block = var.vpc_cidr_block
 
   enable_dns_hostnames = true
   enable_dns_support   = true
 
-  tags = {
+  tags = merge(var.common_tags, {
     Name = "${var.env}-main"
-  }
+    Type = "VPC"
+  })
 }
 
 resource "aws_default_security_group" "default" {
   vpc_id = aws_vpc.this.id
 
-  #Remove all default ingress rules
+
   ingress = []
 
-  #Remove all default egress rules  
-  egress = []
+  egress = [
+    {
+      description      = "HTTPS outbound for EKS API calls"
+      from_port        = 443
+      to_port          = 443
+      protocol         = "tcp"
+      cidr_blocks      = ["0.0.0.0/0"]
+      ipv6_cidr_blocks = []
+      prefix_list_ids  = []
+      security_groups  = []
+      self             = false
+    }
+  ]
 
-  tags = {
+  tags = merge(var.common_tags, {
     Name = "${var.env}-default-sg-restricted"
-  }
+    Type = "SecurityGroup"
+  })
 }
 

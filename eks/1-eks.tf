@@ -1,6 +1,6 @@
+# IAM Role for EKS Cluster
 resource "aws_iam_role" "eks" {
-  name = "${var.env}-${var.eks_name}-eks-cluster"
-
+  name               = "${var.env}-${var.eks_name}-eks-cluster"
   assume_role_policy = <<POLICY
 {
   "Version": "2012-10-17",
@@ -12,15 +12,14 @@ resource "aws_iam_role" "eks" {
       },
       "Action": "sts:AssumeRole"
     }
-]
- }
- POLICY
+  ]
+}
+POLICY
 }
 
 resource "aws_iam_role_policy_attachment" "eks" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
   role       = aws_iam_role.eks.name
-
 }
 
 data "aws_caller_identity" "current" {}
@@ -30,6 +29,10 @@ resource "aws_kms_key" "eks" {
   deletion_window_in_days = 10
   enable_key_rotation     = true
 
+  tags = merge(var.common_tags, {
+    Name = "${var.env}-${var.eks_name}-kms-key"
+    Type = "KMSKey"
+  })
   policy = jsonencode({
     Version = "2012-10-17"
     Id      = "eks-key-policy"
@@ -47,7 +50,7 @@ resource "aws_kms_key" "eks" {
           "kms:GenerateDataKey*",
           "kms:DescribeKey"
         ]
-        Resource = aws_kms_key.eks.arn
+        Resource = "*"
       },
       {
         Sid    = "AllowAccountAdminsFullAccess"
@@ -55,13 +58,119 @@ resource "aws_kms_key" "eks" {
         Principal = {
           AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
         }
-        Action = [
-          "kms:*"
-        ]
-        Resource = aws_kms_key.eks.arn
+        Action   = ["kms:*"]
+        Resource = "*"
       }
     ]
   })
+}
+
+# Security Groups
+resource "aws_security_group" "eks_cluster" {
+  name_prefix = "${var.env}-${var.eks_name}-cluster-"
+  description = "Security group for EKS cluster control plane"
+  vpc_id      = var.vpc_id
+
+  tags = merge(var.common_tags, {
+    Name = "${var.env}-${var.eks_name}-cluster-sg"
+    Type = "SecurtityGroup"
+  })
+}
+
+resource "aws_security_group" "eks_nodes" {
+  name_prefix = "${var.env}-${var.eks_name}-nodes-"
+  description = "Security group for EKS worker nodes"
+  vpc_id      = var.vpc_id
+
+  tags = merge(var.common_tags, {
+    Name = "${var.env}-${var.eks_name}-nodes-sg"
+    Type = "SecurtityGroup"
+  })
+}
+
+# Security Group Rules
+resource "aws_security_group_rule" "cluster_ingress_from_nodes" {
+  type                     = "ingress"
+  from_port                = 443
+  to_port                  = 443
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.eks_nodes.id
+  security_group_id        = aws_security_group.eks_cluster.id
+  description              = "HTTPS from worker nodes"
+}
+
+resource "aws_security_group_rule" "cluster_egress_all" {
+  type              = "egress"
+  from_port         = 0
+  to_port           = 0
+  protocol          = "-1"
+  cidr_blocks       = ["0.0.0.0/0"]
+  security_group_id = aws_security_group.eks_cluster.id
+  description       = "All outbound traffic"
+
+  #checkov:skip=CKV_AWS_277: "0.0.0.0/0 egress required for EKS cluster API access and AWS service communication"
+  #checkov:skip=CKV_AWS_382: "All protocols egress required for EKS cluster to communicate with AWS services and download container images"
+
+}
+
+resource "aws_security_group_rule" "nodes_ingress_self" {
+  type              = "ingress"
+  from_port         = 0
+  to_port           = 65535
+  protocol          = "tcp"
+  self              = true
+  security_group_id = aws_security_group.eks_nodes.id
+  description       = "Node to node communication"
+
+  #checkov:skip=CKV_AWS_24: "Wide port range required for inter-node communication in EKS"
+}
+
+resource "aws_security_group_rule" "nodes_ingress_kubelet" {
+  type                     = "ingress"
+  from_port                = 10250
+  to_port                  = 10250
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.eks_cluster.id
+  security_group_id        = aws_security_group.eks_nodes.id
+  description              = "Cluster API to node kubelets"
+}
+
+resource "aws_security_group_rule" "nodes_ingress_cluster_api" {
+  type                     = "ingress"
+  from_port                = 1025
+  to_port                  = 65535
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.eks_cluster.id
+  security_group_id        = aws_security_group.eks_nodes.id
+  description              = "Cluster API to node communication"
+
+  #checkov:skip=CKV_AWS_24: "Wide port range required for cluster to node communication in EKS"
+}
+
+resource "aws_security_group_rule" "nodes_egress_all" {
+  type              = "egress"
+  from_port         = 0
+  to_port           = 0
+  protocol          = "-1"
+  cidr_blocks       = ["0.0.0.0/0"]
+  security_group_id = aws_security_group.eks_nodes.id
+  description       = "All outbound traffic"
+
+  #checkov:skip=CKV_AWS_277: "0.0.0.0/0 egress required for container image pulls, AWS API access, and package downloads"
+  #checkov:skip=CKV_AWS_382: "All protocols egress required for EKS nodes to communicate with AWS services and download container images"
+}
+
+resource "aws_security_group_rule" "cluster_ingress_external_https" {
+  type              = "ingress"
+  from_port         = 443
+  to_port           = 443
+  protocol          = "tcp"
+  cidr_blocks       = ["0.0.0.0/0"]
+  security_group_id = aws_security_group.eks_cluster.id
+  description       = "HTTPS access to EKS API server for kubectl, helm, and CI/CD operations"
+
+  #checkov:skip=CKV_AWS_260: "0.0.0.0/0 ingress required for EKS API server access from CI/CD pipelines and administrative clients"
+  #checkov:skip=CKV_AWS_24: "EKS cluster API endpoint requires external access for kubectl/helm operations and cluster management"
 }
 
 
@@ -69,6 +178,10 @@ resource "aws_eks_cluster" "this" {
   name     = "${var.env}-${var.eks_name}"
   role_arn = aws_iam_role.eks.arn
   version  = var.eks_version
+
+  access_config {
+    authentication_mode = "API_AND_CONFIG_MAP"
+  }
 
   enabled_cluster_log_types = [
     "api",
@@ -85,17 +198,69 @@ resource "aws_eks_cluster" "this" {
     resources = ["secrets"]
   }
 
-  tags = {
+  tags = merge(var.common_tags, {
+    Name                      = "${var.env}-${var.eks_name}"
+    Type                      = "EKSCluster"
     "checkov:skip=CKV_AWS_39" = "Public endpoint needed for CI/CD and remote management"
-  }
+    "checkov:skip=CKV_AWS_38" = "Public access from anywhere required for external access"
+  })
 
   vpc_config {
     endpoint_private_access = true
     endpoint_public_access  = true
-    public_access_cidrs     = var.eks_allowes_cidrs
-
-    subnet_ids = var.subnet_ids
-
+    public_access_cidrs     = var.eks_allowed_cidrs
+    subnet_ids              = var.subnet_ids
+    security_group_ids = [
+      aws_security_group.eks_cluster.id,
+      aws_security_group.eks_nodes.id
+    ]
   }
+
   depends_on = [aws_iam_role_policy_attachment.eks]
+}
+
+resource "aws_eks_access_entry" "local_admin" {
+  cluster_name  = aws_eks_cluster.this.name
+  principal_arn = "arn:aws:iam::649203810550:user/Kay"
+  type          = "STANDARD"
+
+  tags = merge(var.common_tags, {
+    Name = "${var.env}-${var.eks_name}-local-admin-access"
+    Type = "EKSAccessEntry"
+  })
+}
+
+resource "aws_eks_access_entry" "github_actions" {
+  cluster_name  = aws_eks_cluster.this.name
+  principal_arn = "arn:aws:iam::649203810550:role/EksOIDCRole"
+  type          = "STANDARD"
+
+  tags = merge(var.common_tags, {
+    Name = "${var.env}-${var.eks_name}-github-actions-access"
+    Type = "EKSAccessEntry"
+  })
+}
+
+resource "aws_eks_access_policy_association" "github_actions" {
+  cluster_name  = aws_eks_cluster.this.name
+  principal_arn = "arn:aws:iam::649203810550:role/EksOIDCRole"
+  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+
+  access_scope {
+    type = "cluster"
+  }
+
+  depends_on = [aws_eks_access_entry.github_actions]
+}
+
+resource "aws_eks_access_policy_association" "local_admin" {
+  cluster_name  = aws_eks_cluster.this.name
+  principal_arn = "arn:aws:iam::649203810550:user/Kay"
+  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+
+  access_scope {
+    type = "cluster"
+  }
+
+  depends_on = [aws_eks_access_entry.local_admin]
 }
