@@ -1,0 +1,11 @@
+env = "Dev"
+eks_name = "demo"
+eks_version = "1.33"
+cluster_oidc_issuer_url = "https://oidc.eks.eu-west-1.amazonaws.com/id/EXAMPLED539D4633E53DE1B71EXAMPLE"
+
+common_tags = {
+  Environment = "ci-mock"
+  Owner       = "platform-team"
+  Project     = "infrastructure"
+  CostCenter  = "engineering"
+}
