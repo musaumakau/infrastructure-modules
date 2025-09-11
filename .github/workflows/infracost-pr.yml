@@ -278,63 +278,121 @@ jobs:
           echo "TAGGING_VIOLATIONS=$policy_violations" >> $GITHUB_ENV
           echo "UNTAGGED_RESOURCE_COUNT=${#untagged_resources[@]}" >> $GITHUB_ENV
 
-      - name: Run Governance Policies  
-        continue-on-error: true
-        run: |
-          echo "🛡️  Checking Governance Policies..."
-          
-          policy_violations=0
-          
-          # Check against Infracost breakdown for cost policies
-          if [ -f "/tmp/infracost-breakdown.json" ]; then
-            # Validate JSON first
-            if ! jq empty /tmp/infracost-breakdown.json 2>/dev/null; then
-              echo "❌ Invalid JSON in infracost-breakdown.json"
-              echo "GOVERNANCE_VIOLATIONS=1" >> $GITHUB_ENV
-              exit 0
+      name: Run Governance Policies
+continue-on-error: true
+run: |
+  echo "🛡️ Checking Governance Policies..."
+  policy_violations=0
+  
+  # Check against Infracost breakdown for cost policies
+  if [ -f "/tmp/infracost-breakdown.json" ]; then
+    echo "📋 Debug - Infracost file found, size: $(wc -c < /tmp/infracost-breakdown.json) bytes"
+    
+    # Validate JSON first
+    if ! jq empty /tmp/infracost-breakdown.json 2>/dev/null; then
+      echo "❌ Invalid JSON in infracost-breakdown.json"
+      echo "First 10 lines of the file:"
+      head -10 /tmp/infracost-breakdown.json
+      echo "GOVERNANCE_VIOLATIONS=1" >> $GITHUB_ENV
+      exit 0
+    fi
+    
+    if [ -f ".infracost/policies/governance.rego" ]; then
+      echo "📋 Debug - Policy file found"
+      echo "Policy file contents:"
+      echo "===================="
+      cat .infracost/policies/governance.rego
+      echo "===================="
+      
+      # Test policy syntax
+      if opa fmt .infracost/policies/governance.rego > /dev/null 2>&1; then
+        echo "✅ Policy syntax is valid"
+        
+        # Run the policy evaluation with detailed output
+        echo "🔍 Running OPA evaluation..."
+        result=$(opa eval --data .infracost/policies/governance.rego --input /tmp/infracost-breakdown.json --format=json 'data.infracost.policies.governance.deny[]' 2>&1)
+        opa_exit_code=$?
+        
+        echo "📋 Debug - OPA exit code: $opa_exit_code"
+        echo "📋 Debug - Raw OPA result:"
+        echo "$result"
+        echo "📋 Debug - Result length: ${#result}"
+        
+        if [ $opa_exit_code -eq 0 ]; then
+          if [ "$result" != "[]" ] && [ "$result" != "" ] && [ "$result" != "null" ]; then
+            echo "❌ Governance policy violations found:"
+            echo "Raw result: $result"
+            
+            # Try to parse with jq and show detailed error if it fails
+            if echo "$result" | jq -e . >/dev/null 2>&1; then
+              echo "Formatted violations:"
+              echo "$result" | jq -r '.[] | "• " + (.msg // .message // "No message provided")' 2>/dev/null || {
+                echo "Failed to format with jq, showing structured output:"
+                echo "$result" | jq '.'
+              }
+              
+              # Show additional details if available
+              echo "Full violation details:"
+              echo "$result" | jq -r '.[] | {
+                message: (.msg // .message // "No message"),
+                resource: (.resource // "Unknown resource"),
+                rule: (.rule // "Unknown rule"),
+                details: (.details // "No additional details")
+              }' 2>/dev/null || echo "Could not extract detailed information"
+              
+            else
+              echo "❌ Result is not valid JSON, showing raw output:"
+              echo "$result"
             fi
             
-            if [ -f ".infracost/policies/governance.rego" ]; then
-              # Test policy syntax
-              if opa fmt .infracost/policies/governance.rego > /dev/null 2>&1; then
-                result=$(opa eval --data .infracost/policies/governance.rego --input /tmp/infracost-breakdown.json --format=json 'data.infracost.policies.governance.deny[_]' 2>&1)
-                opa_exit_code=$?
-                
-                if [ $opa_exit_code -eq 0 ]; then
-                  if [ "$result" != "[]" ] && [ "$result" != "" ]; then
-                    echo "❌ Governance policy violations found:"
-                    echo "$result" | jq -r '.[] | "  • " + .msg' 2>/dev/null || echo "  • Policy violation detected"
-                    policy_violations=$((policy_violations + 1))
-                  fi
-                  
-                  # Check warnings too
-                  warnings=$(opa eval --data .infracost/policies/governance.rego --input /tmp/infracost-breakdown.json --format=json 'data.infracost.policies.governance.warn[_]' 2>/dev/null || echo '[]')
-                  
-                  if [ "$warnings" != "[]" ] && [ "$warnings" != "" ]; then
-                    echo "⚠️  Governance policy warnings:"
-                    echo "$warnings" | jq -r '.[] | "  • " + .msg' 2>/dev/null || echo "  • Policy warning detected"
-                  fi
-                else
-                  echo "❌ OPA governance evaluation failed with exit code $opa_exit_code"
-                  echo "Error: $result"
-                fi
-              else
-                echo "❌ Governance policy syntax error"
-                opa fmt .infracost/policies/governance.rego 2>&1 | sed 's/^/  /'
-              fi
-            else
-              echo "⚠️ governance.rego policy file not found"
-            fi
+            policy_violations=$((policy_violations + 1))
           else
-            echo "⚠️ Infracost breakdown file not found"
+            echo "✅ No deny violations found"
           fi
           
-          if [ $policy_violations -eq 0 ]; then
-            echo "✅ No governance policy violations found"
+          # Check warnings too
+          echo "🔍 Checking for warnings..."
+          warnings=$(opa eval --data .infracost/policies/governance.rego --input /tmp/infracost-breakdown.json --format=json 'data.infracost.policies.governance.warn[]' 2>/dev/null || echo '[]')
+          echo "📋 Debug - Warnings result: $warnings"
+          
+          if [ "$warnings" != "[]" ] && [ "$warnings" != "" ] && [ "$warnings" != "null" ]; then
+            echo "⚠️ Governance policy warnings:"
+            echo "$warnings" | jq -r '.[] | "• " + (.msg // .message // "No message provided")' 2>/dev/null || {
+              echo "Warning details:"
+              echo "$warnings"
+            }
           fi
           
-          echo "GOVERNANCE_VIOLATIONS=$policy_violations" >> $GITHUB_ENV
-
+        else
+          echo "❌ OPA governance evaluation failed with exit code $opa_exit_code"
+          echo "Error output: $result"
+          policy_violations=$((policy_violations + 1))
+        fi
+        
+      else
+        echo "❌ Governance policy syntax error"
+        echo "Syntax check output:"
+        opa fmt .infracost/policies/governance.rego 2>&1 | sed 's/^/  /'
+        policy_violations=$((policy_violations + 1))
+      fi
+      
+    else
+      echo "⚠️ governance.rego policy file not found at .infracost/policies/governance.rego"
+    fi
+    
+  else
+    echo "⚠️ Infracost breakdown file not found at /tmp/infracost-breakdown.json"
+  fi
+  
+  # Show summary
+  echo "📊 Summary:"
+  echo "  - Policy violations: $policy_violations"
+  
+  if [ $policy_violations -eq 0 ]; then
+    echo "✅ No governance policy violations found"
+  fi
+  
+  echo "GOVERNANCE_VIOLATIONS=$policy_violations" >> $GITHUB_ENV
       - name: Show current cost breakdown
         run: |
           echo "💰 Current Infrastructure Costs:"
