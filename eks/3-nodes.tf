@@ -1,3 +1,32 @@
+resource "aws_launch_template" "eks_nodes" {
+  for_each = var.node_groups
+
+  name_prefix = "${var.env}-${var.eks_name}-${each.key}-"
+
+  vpc_security_group_ids = [aws_security_group.eks_nodes.id]
+
+  block_device_mappings {
+    device_name = "/dev/xvda"
+    ebs {
+      volume_size           = each.value.disk_size
+      volume_type           = "gp3"
+      encrypted             = true
+      delete_on_termination = true
+    }
+  }
+
+  metadata_options {
+    http_endpoint               = "enabled"
+    http_tokens                 = "required"
+    http_put_response_hop_limit = 1
+  }
+
+  tags = merge(var.common_tags, {
+    Name = "${var.env}-${var.eks_name}-${each.key}-launch-template"
+    Type = "EKSLaunchTemplate"
+  })
+}
+
 resource "aws_eks_node_group" "this" {
   for_each = var.node_groups
 
@@ -9,6 +38,11 @@ resource "aws_eks_node_group" "this" {
 
   capacity_type  = each.value.capacity_type
   instance_types = each.value.instance_types
+
+  launch_template {
+    id      = aws_launch_template.eks_nodes[each.key].id
+    version = aws_launch_template.eks_nodes[each.key].latest_version
+  }
 
   scaling_config {
     desired_size = each.value.scaling_config.desired_size
@@ -25,5 +59,9 @@ resource "aws_eks_node_group" "this" {
   }
 
   depends_on = [aws_iam_role_policy_attachment.nodes]
+  tags = merge(var.common_tags, {
+    Name = "${var.env}-${var.eks_name}-${each.key}-node-group"
+    Type = "EKSNodeGroup"
+  })
 
 }
