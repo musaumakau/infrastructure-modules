@@ -114,7 +114,7 @@ module "eks" {
   source = "git::https://github.com/your-org/infrastructure-modules.git//eks?ref=eks-v1.4.2"
   
   cluster_name    = "production-cluster"
-  cluster_version = "1.28"
+  cluster_version = "1.33"
   vpc_id          = module.vpc.vpc_id
   subnet_ids      = module.vpc.private_subnet_ids
   
@@ -349,7 +349,7 @@ Uses OIDC for secure, keyless authentication:
 - uses: aws-actions/configure-aws-credentials@v4
   with:
     role-to-assume: arn:aws:iam::ACCOUNT:role/GitHubActionsRole
-    aws-region: us-west-2
+    aws-region: eu-west-1
 ```
 
 ## 🤝 Contributing
