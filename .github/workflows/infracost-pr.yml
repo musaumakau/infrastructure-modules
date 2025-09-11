@@ -107,11 +107,36 @@ jobs:
               echo "Planning $dir module..."
               cd $dir
               terraform init -input=false
-              terraform plan -out=tfplan.binary -input=false || echo "Plan failed for $dir, continuing..."
-              terraform show -json tfplan.binary > ../tfplan-${dir}.json 2>/dev/null || echo "Show failed for $dir, continuing..."
-              cd ..
-            fi
-          done
+              
+              # Find the tfvars example file
+              example_file=$(find . -name "*terraform.tfvars.example" -type f | head -1)
+              
+              if [ -n "$example_file" ]; then
+                echo "Using tfvars file: $example_file"
+                terraform plan -var-file="$example_file" -out=tfplan.binary -input=false || echo "Plan failed for $dir, continuing..."
+              else
+                echo "No tfvars file found, planning without variables"
+                terraform plan -out=tfplan.binary -input=false || echo "Plan failed for $dir, continuing..."
+              fi
+            
+            terraform show -json tfplan.binary > ../tfplan-${dir}.json 2>/dev/null || echo "Show failed for $dir, continuing..."
+            cd ..
+          fi
+          done      
+
+      # - name: Terraform Init and Plan (for policy evaluation)
+      #   run: |
+      #     # Initialize and plan each module for policy evaluation
+      #     for dir in eks vpc kubernetes-addons; do
+      #       if [ -d "$dir" ]; then
+      #         echo "Planning $dir module..."
+      #         cd $dir
+      #         terraform init -input=false
+      #         terraform plan -out=tfplan.binary -input=false || echo "Plan failed for $dir, continuing..."
+      #         terraform show -json tfplan.binary > ../tfplan-${dir}.json 2>/dev/null || echo "Show failed for $dir, continuing..."
+      #         cd ..
+      #       fi
+      #     done
 
       - name: Generate Infracost breakdown for policies
         run: |
