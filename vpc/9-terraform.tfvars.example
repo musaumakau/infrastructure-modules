@@ -1,7 +1,26 @@
 # Mock values for CI/CD
 env = "ci-mock"
-vpc_cidr = "10.0.0.0/16"
-availability_zones = ["eu-west-1a", "eu-west-1b", "eu-west-1c"]
+vpc_cidr_block = "10.0.0.0/16"
+azs = ["eu-west-1a", "eu-west-1b", "eu-west-1c"]
+
+private_subnet_cidrs = ["10.0.1.0/24", "10.0.2.0/24", "10.0.3.0/24"]
+public_subnet_cidrs = ["10.0.101.0/24", "10.0.102.0/24", "10.0.103.0/24"]
+
+private_subnet_tags = {
+  Environment = "ci-mock"
+  Owner       = "platform-team"
+  Project     = "infrastructure"
+  CostCenter  = "engineering"
+  Type        = "PrivateSubnet"
+}
+
+public_subnet_tags = {
+  Environment = "ci-mock"
+  Owner       = "platform-team"
+  Project     = "infrastructure"
+  CostCenter  = "engineering"
+  Type        = "PublicSubnet"
+}
 
 # Required tags for policy compliance
 common_tags = {
