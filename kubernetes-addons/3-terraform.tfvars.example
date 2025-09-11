@@ -1,6 +1,6 @@
 env = "Dev"
 eks_name = "demo"
 eks_version = "1.33"
-"cluster_autoscaler_helm_version = "9.48.0"
+cluster_autoscaler_helm_version = "9.48.0"
 cluster_oidc_issuer_url = "https://oidc.eks.eu-west-1.amazonaws.com/id/EXAMPLED539D4633E53DE1B71EXAMPLE"
 
