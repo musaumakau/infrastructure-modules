@@ -29,5 +29,5 @@ variable "skip_helm_deployments" {
 variable "cluster_autoscaler_helm_version" {
   description = "Helm chart version for cluster autoscaler"
   type        = string
-  default     = "9.21.0"
+
 }
