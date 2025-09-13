@@ -1,5 +1,4 @@
-
-
+# KMS Key for CloudWatch Logs encryption
 resource "aws_kms_key" "cloudwatch_logs" {
   description             = "KMS key for CloudWatch Logs encryption"
   deletion_window_in_days = 7
