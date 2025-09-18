@@ -220,6 +220,7 @@ resource "aws_eks_cluster" "this" {
   depends_on = [aws_iam_role_policy_attachment.eks]
 }
 
+# EKS Access Entries and Policy Associations
 resource "aws_eks_access_entry" "local_admin" {
   cluster_name  = aws_eks_cluster.this.name
   principal_arn = "arn:aws:iam::649203810550:user/Kay"
@@ -231,6 +232,7 @@ resource "aws_eks_access_entry" "local_admin" {
   })
 }
 
+# GitHub Actions Access
 resource "aws_eks_access_entry" "github_actions" {
   cluster_name  = aws_eks_cluster.this.name
   principal_arn = "arn:aws:iam::649203810550:role/EksOIDCRole"
