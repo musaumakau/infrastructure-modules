@@ -84,7 +84,7 @@ Complete networking setup with public/private subnets, NAT gateways, and VPC flo
 **Usage:**
 ```hcl
 module "vpc" {
-  source = "git::https://github.com/your-org/infrastructure-modules.git//vpc?ref=vpc-v1.2.3"
+  source = "git::https://github.com/your-org/infrastructure-modules.git//vpc?ref=vpc-v0.0.2"
   
   cidr_block = "10.0.0.0/16"
   availability_zones = ["us-west-2a", "us-west-2b"]
@@ -111,7 +111,7 @@ Production-ready EKS cluster with managed node groups and IRSA support.
 **Usage:**
 ```hcl
 module "eks" {
-  source = "git::https://github.com/your-org/infrastructure-modules.git//eks?ref=eks-v1.4.2"
+  source = "git::https://github.com/your-org/infrastructure-modules.git//eks?ref=eks-v0.0.2"
   
   cluster_name    = "production-cluster"
   cluster_version = "1.33"
