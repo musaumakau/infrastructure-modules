@@ -174,7 +174,7 @@ resource "aws_security_group_rule" "cluster_ingress_external_https" {
   #checkov:skip=CKV_AWS_24: "EKS cluster API endpoint requires external access for kubectl/helm operations and cluster management"
 }
 
-
+# EKS Cluster
 resource "aws_eks_cluster" "this" {
   name     = "${var.env}-${var.eks_name}"
   role_arn = aws_iam_role.eks.arn
