@@ -24,6 +24,7 @@ resource "aws_iam_role_policy_attachment" "eks" {
 
 data "aws_caller_identity" "current" {}
 
+# KMS Key for EKS Secrets Encryption
 resource "aws_kms_key" "eks" {
   description             = "KMS key for EKS secrets encryption"
   deletion_window_in_days = 10
