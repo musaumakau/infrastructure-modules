@@ -1,3 +1,4 @@
+#subnet.tf
 resource "aws_subnet" "private" {
   count = length(var.private_subnet_cidrs)
 
