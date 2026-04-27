@@ -41,5 +41,5 @@ variable "enable_aws_lbc" {
 variable "aws_lbc_helm_version" {
   description = "Helm chart version for AWS Load Balancer Controller"
   type        = string
-  default     = "1.7.1"
+  
 }
