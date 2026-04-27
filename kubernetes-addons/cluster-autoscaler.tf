@@ -1,4 +1,3 @@
-# Remove the data source and locals - not needed!
 
 data "aws_iam_policy_document" "cluster_autoscaler" {
   count = var.enable_cluster_autoscaler && var.openid_provider_arn != null && var.openid_provider_arn != "" ? 1 : 0
