@@ -1,4 +1,4 @@
-#AWS Load Balancer Controller IAM Role and Helm Chart
+#AWS Load Balancer Controller IAM Role and Helm Chart Deployment
 data "aws_iam_policy_document" "aws_lbc" {
   count = var.enable_aws_lbc && var.openid_provider_arn != null && var.openid_provider_arn != "" ? 1 : 0
 

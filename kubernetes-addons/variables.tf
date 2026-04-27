@@ -29,7 +29,6 @@ variable "skip_helm_deployments" {
 variable "cluster_autoscaler_helm_version" {
   description = "Helm chart version for cluster autoscaler"
   type        = string
-
 }
 
 variable "enable_aws_lbc" {
@@ -41,5 +40,4 @@ variable "enable_aws_lbc" {
 variable "aws_lbc_helm_version" {
   description = "Helm chart version for AWS Load Balancer Controller"
   type        = string
-  
 }
