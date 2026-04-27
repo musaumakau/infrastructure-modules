@@ -54,7 +54,9 @@ resource "aws_iam_policy" "external_dns" {
   })
 
   tags = {
-    "eks_addon" = "external-dns"
+    "eks_addon"                = "external-dns"
+    "checkov:skip=CKV_AWS_355" = "External DNS requires wildcard to list all hosted zones"
+    "checkov:skip=CKV_AWS_290" = "External DNS requires wildcard for Route53 list actions"
   }
 }
 
