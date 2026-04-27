@@ -1,4 +1,4 @@
-
+# This file defines the resources for deploying External DNS as an EKS addon using Helm.
 data "aws_iam_policy_document" "external_dns" {
   count = var.enable_external_dns && var.openid_provider_arn != null && var.openid_provider_arn != "" ? 1 : 0
 
