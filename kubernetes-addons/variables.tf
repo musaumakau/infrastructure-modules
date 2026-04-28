@@ -185,3 +185,11 @@ variable "loki_helm_version" {
   description = "Helm chart version for Loki Stack"
   type        = string
 }
+
+############################
+# AWS Load Balancer Controller
+############################
+variable "vpc_id" {
+  description = "VPC ID for the EKS cluster, used by AWS Load Balancer Controller"
+  type        = string
+}
