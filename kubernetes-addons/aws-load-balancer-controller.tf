@@ -80,5 +80,11 @@ resource "helm_release" "aws_lbc" {
     value = "1"
   }
 
+  set {
+    name  = "vpcId"
+    value = var.vpc_id
+  }
+
   depends_on = [aws_iam_role_policy_attachment.aws_lbc]
 }
+
