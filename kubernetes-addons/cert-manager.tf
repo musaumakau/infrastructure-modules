@@ -88,5 +88,5 @@ resource "helm_release" "cert_manager" {
     value = aws_iam_role.cert_manager[0].arn
   }
 
-  depends_on = [aws_iam_role_policy_attachment.cert_manager]
+  depends_on = [aws_iam_role_policy_attachment.cert_manager, helm_release.aws_lbc]
 }
