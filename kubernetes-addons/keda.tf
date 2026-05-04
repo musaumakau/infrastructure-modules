@@ -44,7 +44,12 @@ resource "aws_iam_policy" "keda" {
           "sqs:ListDeadLetterSourceQueues",
           "sqs:ReceiveMessage",
           "sqs:DeleteMessage",
-          "sqs:GetQueueAttributes",
+        ]
+        Resource = "arn:aws:sqs:${var.aws_region}:${var.aws_account_id}:*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
           "cloudwatch:GetMetricStatistics",
           "cloudwatch:ListMetrics",
           "cloudwatch:GetMetricData",
@@ -55,10 +60,11 @@ resource "aws_iam_policy" "keda" {
   })
 
   tags = {
-    "eks_addon" = "keda"
+    "eks_addon"                = "keda"
+    "checkov:skip=CKV_AWS_290" = "KEDA requires CloudWatch read access for metric-based scaling"
+    "checkov:skip=CKV_AWS_355" = "CloudWatch metrics require wildcard resource as they are not resource-specific"
   }
 }
-
 resource "aws_iam_role_policy_attachment" "keda" {
   count      = var.enable_keda && var.openid_provider_arn != null && var.openid_provider_arn != "" ? 1 : 0
   role       = aws_iam_role.keda[0].name
