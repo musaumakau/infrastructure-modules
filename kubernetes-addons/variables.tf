@@ -193,3 +193,18 @@ variable "vpc_id" {
   description = "VPC ID for the EKS cluster, used by AWS Load Balancer Controller"
   type        = string
 }
+
+############################
+# KEDA
+############################
+
+variable "enable_keda" {
+  description = "Enable KEDA (Kubernetes Event-driven Autoscaling)"
+  type        = bool
+  default     = false
+}
+
+variable "keda_helm_version" {
+  description = "Helm chart version for KEDA"
+  type        = string
+}
