@@ -53,6 +53,7 @@ jobs:
     name: Trigger Infra Live Deployment
     needs: terraform  # ensures this runs only after validate/lint succeed
     runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - name: Trigger infrastructure-live repo pipeline
         env:
