@@ -8,7 +8,10 @@ resource "helm_release" "kube_prometheus_stack" {
   namespace        = "monitoring"
   version          = var.kube_prometheus_stack_helm_version
   create_namespace = true
-  timeout          = 600
+  timeout          = 900
+  wait             = false
+  wait_for_jobs    = false
+  cleanup_on_fail  = true
 
   set {
     name  = "grafana.persistence.enabled"
