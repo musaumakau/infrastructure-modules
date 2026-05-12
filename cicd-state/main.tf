@@ -1,4 +1,3 @@
-
 # =============================================================================
 # MODULE: cicd-state
 # =============================================================================
@@ -40,10 +39,15 @@ resource "aws_kms_alias" "plan_manifests" {
 
 # -----------------------------------------------------------------------------
 # KMS key policy
-# Root account retains full administrative access.
+# Root account retains full administrative access over this key.
 # OIDC role is granted encrypt/decrypt only — no key administration.
 # Both the IAM policy on the role AND this key policy must allow an action
 # for it to succeed — KMS enforces both independently.
+#
+# Note: explicit admin actions are listed instead of kms:* to satisfy
+# CKV_AWS_109 and CKV_AWS_356. Resources reference the key ARN directly
+# instead of "*" for the same reason — AWS scopes key policies to the key
+# implicitly but checkov requires an explicit ARN.
 # -----------------------------------------------------------------------------
 
 data "aws_iam_policy_document" "plan_manifests_key_policy" {
@@ -56,8 +60,24 @@ data "aws_iam_policy_document" "plan_manifests_key_policy" {
       identifiers = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"]
     }
 
-    actions   = ["kms:*"]
-    resources = ["*"]
+    actions = [
+      "kms:Create*",
+      "kms:Describe*",
+      "kms:Enable*",
+      "kms:List*",
+      "kms:Put*",
+      "kms:Update*",
+      "kms:Revoke*",
+      "kms:Disable*",
+      "kms:Get*",
+      "kms:Delete*",
+      "kms:TagResource",
+      "kms:UntagResource",
+      "kms:ScheduleKeyDeletion",
+      "kms:CancelKeyDeletion",
+    ]
+
+    resources = [aws_kms_key.plan_manifests.arn]
   }
 
   statement {
@@ -74,7 +94,7 @@ data "aws_iam_policy_document" "plan_manifests_key_policy" {
       "kms:Decrypt",
     ]
 
-    resources = ["*"]
+    resources = [aws_kms_key.plan_manifests.arn]
   }
 }
 
@@ -87,9 +107,9 @@ resource "aws_kms_key_policy" "plan_manifests" {
 # S3 bucket
 # -----------------------------------------------------------------------------
 
-#checkov:skip=CKV2_AWS_62: Event notifications are not required for this internal CI/CD artifact bucket
+#checkov:skip=CKV2_AWS_62: Event notifications not required for ephemeral CI/CD artifact bucket
 #checkov:skip=CKV_AWS_144: Cross-region replication not required for ephemeral CI/CD plan manifests
-#checkov:skip=CKV_AWS_18: Access logging not required for ephemeral internal CI/CD manifests bucket
+#checkov:skip=CKV_AWS_18: Access logging not required for ephemeral internal CI/CD manifests
 resource "aws_s3_bucket" "plan_manifests" {
   bucket = "${var.project_name}-terraform-plan-manifests"
 
