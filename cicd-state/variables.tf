@@ -1,0 +1,32 @@
+# =============================================================================
+# MODULE: cicd-state — variables
+# =============================================================================
+
+variable "project_name" {
+  description = "Project name used to prefix all resource names"
+  type        = string
+}
+
+variable "kms_deletion_window_days" {
+  description = "Number of days before a scheduled KMS key deletion takes effect"
+  type        = number
+  default     = 7
+}
+
+variable "manifest_retention_days" {
+  description = "Number of days before plan manifest objects are automatically deleted"
+  type        = number
+  default     = 90
+}
+
+variable "noncurrent_version_retention_days" {
+  description = "Number of days before non-current object versions are deleted"
+  type        = number
+  default     = 30
+}
+
+variable "tags" {
+  description = "Tags to apply to all resources"
+  type        = map(string)
+  default     = {}
+}
