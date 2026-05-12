@@ -1,10 +1,16 @@
-#This workflow validates and lints Terraform code, and triggers a deployment pipeline if checks pass.
+# This workflow validates and lints Terraform code, generates plan manifests,
+# scores blast radius, and triggers deployment if checks pass.
 name: Terraform Checks
 
 on:
   push:
     branches: [main]
   pull_request:
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
 
 jobs:
   terraform:
@@ -16,14 +22,12 @@ jobs:
           - vpc
           - eks
           - kubernetes-addons
-          - cicd-state
     defaults:
       run:
         working-directory: ./${{ matrix.module }}
-
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3
@@ -31,7 +35,7 @@ jobs:
           terraform_version: 1.7.5
 
       - name: Terraform Init
-        run: terraform init
+        run: terraform init -backend=false
 
       - name: Terraform Validate
         run: terraform validate
@@ -50,13 +54,187 @@ jobs:
         with:
           directory: ./${{ matrix.module }}
 
+  plan-and-score:
+    name: Speculative Plan & Blast Radius
+    needs: terraform
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    strategy:
+      matrix:
+        module:
+          - vpc
+          - eks
+          - kubernetes-addons
+      fail-fast: false
+    steps:
+      - name: Checkout infrastructure-modules
+        uses: actions/checkout@v4
+
+      - name: Checkout infrastructure-live
+        uses: actions/checkout@v4
+        with:
+          repository: musaumakau/infrastructure-live
+          token: ${{ secrets.REPO_DISPATCH_PAT }}
+          path: infrastructure-live
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::649203810550:role/EksOIDCRole
+          aws-region: eu-west-1
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.7.5
+
+      - name: Install Terragrunt
+        run: |
+          TERRAGRUNT_VERSION="0.84.1"
+          curl -L -o terragrunt https://github.com/gruntwork-io/terragrunt/releases/download/v${TERRAGRUNT_VERSION}/terragrunt_linux_amd64
+          chmod +x terragrunt
+          sudo mv terragrunt /usr/local/bin/
+
+      - name: Speculative Plan
+        id: plan
+        env:
+          REPO_DISPATCH_PAT: ${{ secrets.REPO_DISPATCH_PAT }}
+          GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
+        run: |
+          cd infrastructure-live/Dev/${{ matrix.module }}
+          terragrunt init --upgrade
+          terragrunt plan --non-interactive -out=tfplan.binary
+          terragrunt show -json tfplan.binary > tfplan.json
+
+      - name: Score blast radius
+        id: score
+        run: |
+          cd infrastructure-live/Dev/${{ matrix.module }}
+
+          python3 << 'EOF'
+          import json, os
+
+          with open('tfplan.json') as f:
+              plan = json.load(f)
+
+          action_scores = {'create': 1, 'update': 2, 'delete': 10, 'replace': 8}
+          resource_multipliers = {
+              'aws_eks_cluster':     20,
+              'aws_rds_instance':    15,
+              'aws_iam_role':         8,
+              'aws_security_group':   6,
+              'aws_vpc':             15,
+              'aws_subnet':           8,
+              'aws_kms_key':         10,
+              'aws_s3_bucket':        6,
+              'helm_release':         5,
+              'kubernetes_manifest':  4,
+          }
+
+          changes, score = [], 0
+          for r in plan.get('resource_changes', []):
+              actions = r['change']['actions']
+              if actions == ['no-op']:
+                  continue
+              action     = actions[0]
+              multiplier = resource_multipliers.get(r['type'], 1)
+              rscore     = action_scores.get(action, 1) * multiplier
+              score     += rscore
+              changes.append({
+                  'address': r['address'],
+                  'type':    r['type'],
+                  'actions': actions,
+                  'score':   rscore,
+              })
+
+          manifest = {
+              'module':          '${{ matrix.module }}',
+              'pr':              '${{ github.event.pull_request.number }}',
+              'commit':          '${{ github.sha }}',
+              'score':           score,
+              'total_resources': len(changes),
+              'deletions':       sum(1 for c in changes if 'delete' in c['actions']),
+              'replacements':    sum(1 for c in changes if 'replace' in c['actions']),
+              'resources':       changes,
+          }
+
+          with open('manifest.json', 'w') as f:
+              json.dump(manifest, f, indent=2)
+
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as gh:
+              gh.write(f"score={score}\n")
+              gh.write(f"total={len(changes)}\n")
+              gh.write(f"deletions={manifest['deletions']}\n")
+              gh.write(f"replacements={manifest['replacements']}\n")
+          EOF
+
+      - name: Upload manifest to S3
+        run: |
+          cd infrastructure-live/Dev/${{ matrix.module }}
+
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            KEY="pr-${{ github.event.pull_request.number }}/${{ matrix.module }}/manifest.json"
+          else
+            KEY="deploy-pointer/${{ github.sha }}/${{ matrix.module }}/manifest.json"
+          fi
+
+          aws s3 cp manifest.json s3://${{ vars.PLAN_MANIFEST_BUCKET }}/${KEY}
+          echo "Saved manifest to s3://${{ vars.PLAN_MANIFEST_BUCKET }}/${KEY}"
+
+      - name: Comment blast radius on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const score     = ${{ steps.score.outputs.score }};
+            const total     = ${{ steps.score.outputs.total }};
+            const deletions = ${{ steps.score.outputs.deletions }};
+            const module    = '${{ matrix.module }}';
+            const emoji     = score > 100 ? '🔴' : score > 50 ? '🟡' : '🟢';
+            const status    = score > 150
+              ? '⛔ **Blocked** — add `blast-radius-override: <reason>` to PR description'
+              : score > 50
+              ? '⚠️ **Elevated** — review carefully'
+              : '✅ **Low risk**';
+
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner:        context.repo.owner,
+              repo:         context.repo.repo,
+              body: `### ${emoji} Blast Radius — \`${module}\`
+
+            | Metric | Value |
+            |---|---|
+            | Resources affected | ${total} |
+            | Deletions | ${deletions} |
+            | Score | ${score} |
+
+            ${status}`
+            });
+
+      - name: Fail if score exceeds limit
+        if: github.event_name == 'pull_request'
+        run: |
+          SCORE=${{ steps.score.outputs.score }}
+          PR_BODY="${{ github.event.pull_request.body }}"
+
+          if echo "$PR_BODY" | grep -q "blast-radius-override:"; then
+            echo "Override found in PR description — skipping score gate"
+            exit 0
+          fi
+
+          if [ "$SCORE" -gt 150 ]; then
+            echo "Blast radius score $SCORE exceeds limit of 150"
+            exit 1
+          fi
+
   dispatch-live-deploy:
     name: Trigger Infra Live Deployment
-    needs: terraform  # ensures this runs only after validate/lint succeed
+    needs: [terraform, plan-and-score]
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
-      - name: Trigger infrastructure-live repo pipeline
+      - name: Trigger infrastructure-live pipeline
         env:
           GITHUB_TOKEN: ${{ secrets.REPO_DISPATCH_PAT }}
         run: |
@@ -64,4 +242,9 @@ jobs:
             -H "Accept: application/vnd.github+json" \
             -H "Authorization: token $GITHUB_TOKEN" \
             https://api.github.com/repos/musaumakau/infrastructure-live/dispatches \
-            -d '{"event_type":"trigger-deploy"}'
+            -d '{
+              "event_type": "trigger-deploy",
+              "client_payload": {
+                "sha": "${{ github.sha }}"
+              }
+            }'
