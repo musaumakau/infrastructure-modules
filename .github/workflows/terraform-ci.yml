@@ -16,6 +16,7 @@ jobs:
           - vpc
           - eks
           - kubernetes-addons
+          - cicd-state
     defaults:
       run:
         working-directory: ./${{ matrix.module }}
