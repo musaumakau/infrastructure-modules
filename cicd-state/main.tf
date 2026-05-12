@@ -107,14 +107,14 @@ resource "aws_kms_key_policy" "plan_manifests" {
 # S3 bucket
 # -----------------------------------------------------------------------------
 
-#checkov:skip=CKV2_AWS_62: Event notifications not required for ephemeral CI/CD artifact bucket
-#checkov:skip=CKV_AWS_144: Cross-region replication not required for ephemeral CI/CD plan manifests
-#checkov:skip=CKV_AWS_18: Access logging not required for ephemeral internal CI/CD manifests
 resource "aws_s3_bucket" "plan_manifests" {
   bucket = "${var.project_name}-terraform-plan-manifests"
 
   tags = merge(var.tags, {
-    Name = "${var.project_name}-terraform-plan-manifests"
+    Name                       = "${var.project_name}-terraform-plan-manifests"
+    "checkov:skip=CKV2_AWS_62" = "Event notifications not required for ephemeral CI/CD artifact bucket"
+    "checkov:skip=CKV_AWS_144" = "Cross-region replication not required for ephemeral CI/CD plan manifests"
+    "checkov:skip=CKV_AWS_18"  = "Access logging not required for ephemeral internal CI/CD manifests"
   })
 }
 
