@@ -8,11 +8,9 @@ output "bucket_arn" {
 }
 
 output "plan_role_policy_arn" {
-  value = aws_iam_policy.plan_role_s3.arn
-  description = "Attach this to your GitHub Actions plan IAM role"
+  value = aws_iam_policy.plan_role.arn
 }
 
 output "deploy_role_policy_arn" {
-  value = aws_iam_policy.deploy_role_s3.arn
-  description = "Attach this to your GitHub Actions deploy IAM role"
+  value = aws_iam_policy.deploy_role.arn
 }
