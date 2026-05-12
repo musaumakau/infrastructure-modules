@@ -30,3 +30,8 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+variable "oidc_role_arn" {
+  description = "ARN of the OIDC role used by both pipelines — granted encrypt/decrypt access on the KMS key"
+  type        = string
+}
