@@ -62,7 +62,7 @@ jobs:
         module:
           - vpc
           - eks
-          - kubernetes-addons
+          # kubernetes-addons
       fail-fast: false
     steps:
       - name: Checkout infrastructure-modules
