@@ -1,5 +1,3 @@
-# This workflow validates and lints Terraform code, generates plan manifests,
-# scores blast radius, and triggers deployment if checks pass.
 name: Terraform Checks
 
 on:
