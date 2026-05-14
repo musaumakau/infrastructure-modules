@@ -1,6 +1,7 @@
 # IAM Role for EKS Cluster
 resource "aws_iam_role" "eks" {
-  name               = "${var.env}-${var.eks_name}-eks-cluster"
+  name = "${var.env}-${var.eks_name}-eks-cluster"
+
   assume_role_policy = <<POLICY
 {
   "Version": "2012-10-17",
@@ -34,6 +35,7 @@ resource "aws_kms_key" "eks" {
     Name = "${var.env}-${var.eks_name}-kms-key"
     Type = "KMSKey"
   })
+
   policy = jsonencode({
     Version = "2012-10-17"
     Id      = "eks-key-policy"
@@ -66,7 +68,10 @@ resource "aws_kms_key" "eks" {
   })
 }
 
+# -----------------------------------------------------------------------------
 # Security Groups
+# -----------------------------------------------------------------------------
+
 resource "aws_security_group" "eks_cluster" {
   name_prefix = "${var.env}-${var.eks_name}-cluster-"
   description = "Security group for EKS cluster control plane"
@@ -74,7 +79,7 @@ resource "aws_security_group" "eks_cluster" {
 
   tags = merge(var.common_tags, {
     Name = "${var.env}-${var.eks_name}-cluster-sg"
-    Type = "SecurtityGroup"
+    Type = "SecurityGroup"
   })
 }
 
@@ -85,11 +90,14 @@ resource "aws_security_group" "eks_nodes" {
 
   tags = merge(var.common_tags, {
     Name = "${var.env}-${var.eks_name}-nodes-sg"
-    Type = "SecurtityGroup"
+    Type = "SecurityGroup"
   })
 }
 
+# -----------------------------------------------------------------------------
 # Security Group Rules
+# -----------------------------------------------------------------------------
+
 resource "aws_security_group_rule" "cluster_ingress_from_nodes" {
   type                     = "ingress"
   from_port                = 443
@@ -111,7 +119,6 @@ resource "aws_security_group_rule" "cluster_egress_all" {
 
   #checkov:skip=CKV_AWS_277: "0.0.0.0/0 egress required for EKS cluster API access and AWS service communication"
   #checkov:skip=CKV_AWS_382: "All protocols egress required for EKS cluster to communicate with AWS services and download container images"
-
 }
 
 resource "aws_security_group_rule" "nodes_ingress_self" {
@@ -174,7 +181,10 @@ resource "aws_security_group_rule" "cluster_ingress_external_https" {
   #checkov:skip=CKV_AWS_24: "EKS cluster API endpoint requires external access for kubectl/helm operations and cluster management"
 }
 
+# -----------------------------------------------------------------------------
 # EKS Cluster
+# -----------------------------------------------------------------------------
+
 resource "aws_eks_cluster" "this" {
   name     = "${var.env}-${var.eks_name}"
   role_arn = aws_iam_role.eks.arn
@@ -220,22 +230,41 @@ resource "aws_eks_cluster" "this" {
   depends_on = [aws_iam_role_policy_attachment.eks]
 }
 
-# EKS Access Entries and Policy Associations
-resource "aws_eks_access_entry" "local_admin" {
+# -----------------------------------------------------------------------------
+# EKS Access Entries
+# Principals are passed as variables — no hardcoded ARNs in the module.
+# -----------------------------------------------------------------------------
+
+resource "aws_eks_access_entry" "admins" {
+  for_each = toset(var.admin_principal_arns)
+
   cluster_name  = aws_eks_cluster.this.name
-  principal_arn = "arn:aws:iam::649203810550:user/Kay"
+  principal_arn = each.value
   type          = "STANDARD"
 
   tags = merge(var.common_tags, {
-    Name = "${var.env}-${var.eks_name}-local-admin-access"
+    Name = "${var.env}-${var.eks_name}-admin-access"
     Type = "EKSAccessEntry"
   })
 }
 
-# GitHub Actions Access
+resource "aws_eks_access_policy_association" "admins" {
+  for_each = toset(var.admin_principal_arns)
+
+  cluster_name  = aws_eks_cluster.this.name
+  principal_arn = each.value
+  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+
+  access_scope {
+    type = "cluster"
+  }
+
+  depends_on = [aws_eks_access_entry.admins]
+}
+
 resource "aws_eks_access_entry" "github_actions" {
   cluster_name  = aws_eks_cluster.this.name
-  principal_arn = "arn:aws:iam::649203810550:role/EksOIDCRole"
+  principal_arn = var.github_actions_role_arn
   type          = "STANDARD"
 
   tags = merge(var.common_tags, {
@@ -246,7 +275,7 @@ resource "aws_eks_access_entry" "github_actions" {
 
 resource "aws_eks_access_policy_association" "github_actions" {
   cluster_name  = aws_eks_cluster.this.name
-  principal_arn = "arn:aws:iam::649203810550:role/EksOIDCRole"
+  principal_arn = var.github_actions_role_arn
   policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
 
   access_scope {
@@ -254,16 +283,4 @@ resource "aws_eks_access_policy_association" "github_actions" {
   }
 
   depends_on = [aws_eks_access_entry.github_actions]
-}
-
-resource "aws_eks_access_policy_association" "local_admin" {
-  cluster_name  = aws_eks_cluster.this.name
-  principal_arn = "arn:aws:iam::649203810550:user/Kay"
-  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
-
-  access_scope {
-    type = "cluster"
-  }
-
-  depends_on = [aws_eks_access_entry.local_admin]
 }
