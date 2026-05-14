@@ -1,5 +1,5 @@
 data "aws_iam_policy_document" "keda" {
-  count = var.enable_keda && var.openid_provider_arn != null && var.openid_provider_arn != "" ? 1 : 0
+  count = local.irsa_ready && var.enable_keda ? 1 : 0
 
   statement {
     actions = ["sts:AssumeRoleWithWebIdentity"]
@@ -19,7 +19,7 @@ data "aws_iam_policy_document" "keda" {
 }
 
 resource "aws_iam_role" "keda" {
-  count              = var.enable_keda && var.openid_provider_arn != null && var.openid_provider_arn != "" ? 1 : 0
+  count              = local.irsa_ready && var.enable_keda ? 1 : 0
   name               = "${var.eks_name}-keda"
   assume_role_policy = data.aws_iam_policy_document.keda[0].json
 
@@ -29,7 +29,7 @@ resource "aws_iam_role" "keda" {
 }
 
 resource "aws_iam_policy" "keda" {
-  count = var.enable_keda && var.openid_provider_arn != null && var.openid_provider_arn != "" ? 1 : 0
+  count = local.irsa_ready && var.enable_keda ? 1 : 0
   name  = "${var.eks_name}-keda"
 
   policy = jsonencode({
@@ -65,14 +65,15 @@ resource "aws_iam_policy" "keda" {
     "checkov:skip=CKV_AWS_355" = "CloudWatch metrics require wildcard resource as they are not resource-specific"
   }
 }
+
 resource "aws_iam_role_policy_attachment" "keda" {
-  count      = var.enable_keda && var.openid_provider_arn != null && var.openid_provider_arn != "" ? 1 : 0
+  count      = local.irsa_ready && var.enable_keda ? 1 : 0
   role       = aws_iam_role.keda[0].name
   policy_arn = aws_iam_policy.keda[0].arn
 }
 
 resource "helm_release" "keda" {
-  count = var.skip_helm_deployments || !var.enable_keda || var.openid_provider_arn == null || var.openid_provider_arn == "" ? 0 : 1
+  count = local.irsa_ready && var.enable_keda ? 1 : 0
 
   name             = "keda"
   repository       = "https://kedacore.github.io/charts"
@@ -93,3 +94,5 @@ resource "helm_release" "keda" {
 
   depends_on = [aws_iam_role_policy_attachment.keda, helm_release.aws_lbc]
 }
+
+

@@ -1,4 +1,3 @@
-
 resource "helm_release" "metrics_server" {
   count = var.skip_helm_deployments || !var.enable_metrics_server ? 0 : 1
 
@@ -10,6 +9,6 @@ resource "helm_release" "metrics_server" {
 
   set {
     name  = "args[0]"
-    value = "--kubelet-insecure-tls"
+    value = "--kubelet-insecure-tls=${var.metrics_server_insecure_tls}"
   }
 }

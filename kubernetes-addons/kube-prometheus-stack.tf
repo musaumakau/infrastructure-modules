@@ -1,6 +1,5 @@
-
 resource "helm_release" "kube_prometheus_stack" {
-  count = var.skip_helm_deployments || !var.enable_kube_prometheus_stack ? 0 : 1
+  count = local.helm_ready && var.enable_kube_prometheus_stack ? 1 : 0
 
   name             = "kube-prometheus-stack"
   repository       = "https://prometheus-community.github.io/helm-charts"
@@ -32,4 +31,6 @@ resource "helm_release" "kube_prometheus_stack" {
     name  = "grafana.adminPassword"
     value = var.grafana_admin_password
   }
+
+  depends_on = [aws_eks_addon.ebs_csi]
 }

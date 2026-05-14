@@ -1,15 +1,16 @@
-
 data "aws_iam_policy_document" "cluster_autoscaler" {
-  count = var.enable_cluster_autoscaler && var.openid_provider_arn != null && var.openid_provider_arn != "" ? 1 : 0
+  count = local.irsa_ready && var.enable_cluster_autoscaler ? 1 : 0
 
   statement {
     actions = ["sts:AssumeRoleWithWebIdentity"]
     effect  = "Allow"
+
     condition {
       test     = "StringEquals"
       variable = "${replace(var.cluster_oidc_issuer_url, "https://", "")}:sub"
       values   = ["system:serviceaccount:kube-system:cluster-autoscaler"]
     }
+
     principals {
       identifiers = [var.openid_provider_arn]
       type        = "Federated"
@@ -18,22 +19,25 @@ data "aws_iam_policy_document" "cluster_autoscaler" {
 }
 
 resource "aws_iam_role" "cluster_autoscaler" {
-  count              = var.enable_cluster_autoscaler && var.openid_provider_arn != null && var.openid_provider_arn != "" ? 1 : 0
-  assume_role_policy = data.aws_iam_policy_document.cluster_autoscaler[0].json
+  count              = local.irsa_ready && var.enable_cluster_autoscaler ? 1 : 0
   name               = "${var.eks_name}-cluster-autoscaler"
+  assume_role_policy = data.aws_iam_policy_document.cluster_autoscaler[0].json
 }
 
 resource "aws_iam_policy" "cluster_autoscaler" {
-  count = var.enable_cluster_autoscaler && var.openid_provider_arn != null && var.openid_provider_arn != "" ? 1 : 0
+  count = local.irsa_ready && var.enable_cluster_autoscaler ? 1 : 0
   name  = "${var.eks_name}-cluster-autoscaler"
+
   tags = {
     "checkov:skip=CKV_AWS_355" = "Cluster Autoscaler requires wildcard for dynamic scaling"
     "checkov:skip=CKV_AWS_290" = "Necessary wildcard for EC2 and ASG describe actions"
   }
+
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
       {
+        Effect = "Allow"
         Action = [
           "autoscaling:DescribeAutoScalingGroups",
           "autoscaling:DescribeAutoScalingInstances",
@@ -43,10 +47,10 @@ resource "aws_iam_policy" "cluster_autoscaler" {
           "ec2:DescribeInstanceTypes",
           "ec2:DescribeLaunchTemplateVersions"
         ]
-        Effect   = "Allow"
         Resource = "*"
       },
       {
+        Effect = "Allow"
         Action = [
           "autoscaling:SetDesiredCapacity",
           "autoscaling:TerminateInstanceInAutoScalingGroup",
@@ -54,7 +58,6 @@ resource "aws_iam_policy" "cluster_autoscaler" {
           "ec2:GetInstanceTypesFromInstanceRequirements",
           "eks:DescribeNodegroup"
         ]
-        Effect   = "Allow"
         Resource = "*"
       }
     ]
@@ -62,13 +65,14 @@ resource "aws_iam_policy" "cluster_autoscaler" {
 }
 
 resource "aws_iam_role_policy_attachment" "cluster_autoscaler" {
-  count      = var.enable_cluster_autoscaler && var.openid_provider_arn != null && var.openid_provider_arn != "" ? 1 : 0
+  count      = local.irsa_ready && var.enable_cluster_autoscaler ? 1 : 0
   role       = aws_iam_role.cluster_autoscaler[0].name
   policy_arn = aws_iam_policy.cluster_autoscaler[0].arn
 }
 
 resource "helm_release" "cluster_autoscaler" {
-  count      = var.skip_helm_deployments || var.openid_provider_arn == null || var.openid_provider_arn == "" ? 0 : 1
+  count = local.irsa_ready && var.enable_cluster_autoscaler ? 1 : 0
+
   name       = "autoscaler"
   repository = "https://kubernetes.github.io/autoscaler"
   chart      = "cluster-autoscaler"
@@ -90,4 +94,5 @@ resource "helm_release" "cluster_autoscaler" {
     value = var.eks_name
   }
 
+  depends_on = [aws_iam_role_policy_attachment.cluster_autoscaler]
 }

@@ -1,6 +1,5 @@
-############################
+
 # Core Cluster Inputs
-############################
 
 variable "eks_name" {
   description = "Name of the EKS cluster"
@@ -28,9 +27,13 @@ variable "aws_account_id" {
   type        = string
 }
 
-############################
+variable "vpc_id" {
+  description = "VPC ID for the EKS cluster, used by AWS Load Balancer Controller"
+  type        = string
+}
+
+
 # Global Flags
-############################
 
 variable "skip_helm_deployments" {
   description = "Skip helm deployments"
@@ -38,9 +41,8 @@ variable "skip_helm_deployments" {
   default     = false
 }
 
-############################
+
 # Cluster Autoscaler
-############################
 
 variable "enable_cluster_autoscaler" {
   description = "Enable cluster autoscaler"
@@ -53,9 +55,7 @@ variable "cluster_autoscaler_helm_version" {
   type        = string
 }
 
-############################
 # AWS Load Balancer Controller
-############################
 
 variable "enable_aws_lbc" {
   description = "Enable AWS Load Balancer Controller"
@@ -68,9 +68,7 @@ variable "aws_lbc_helm_version" {
   type        = string
 }
 
-############################
 # EBS CSI Driver
-############################
 
 variable "enable_ebs_csi_driver" {
   description = "Enable EBS CSI Driver addon"
@@ -83,9 +81,7 @@ variable "ebs_csi_addon_version" {
   type        = string
 }
 
-############################
 # Metrics Server
-############################
 
 variable "enable_metrics_server" {
   description = "Enable Metrics Server"
@@ -98,9 +94,17 @@ variable "metrics_server_helm_version" {
   type        = string
 }
 
-############################
+variable "metrics_server_insecure_tls" {
+  description = <<-EOT
+    Enable insecure TLS for metrics server kubelet connections.
+    Required on EKS where kubelets use self-signed certificates.
+    Set to false if your cluster uses properly signed kubelet certs.
+  EOT
+  type        = bool
+  default     = true
+}
+
 # External Secrets
-############################
 
 variable "enable_external_secrets" {
   description = "Enable External Secrets Operator"
@@ -113,9 +117,8 @@ variable "external_secrets_helm_version" {
   type        = string
 }
 
-############################
+
 # Cert Manager
-############################
 
 variable "enable_cert_manager" {
   description = "Enable Cert Manager"
@@ -128,9 +131,8 @@ variable "cert_manager_helm_version" {
   type        = string
 }
 
-############################
+
 # External DNS
-############################
 
 variable "enable_external_dns" {
   description = "Enable External DNS"
@@ -149,9 +151,8 @@ variable "external_dns_domain_filter" {
   default     = ""
 }
 
-############################
+
 # Monitoring (Prometheus + Grafana)
-############################
 
 variable "enable_kube_prometheus_stack" {
   description = "Enable Kube Prometheus Stack"
@@ -171,9 +172,8 @@ variable "grafana_admin_password" {
   default     = null
 }
 
-############################
+
 # Logging (Loki)
-############################
 
 variable "enable_loki" {
   description = "Enable Loki Stack"
@@ -186,17 +186,8 @@ variable "loki_helm_version" {
   type        = string
 }
 
-############################
-# AWS Load Balancer Controller
-############################
-variable "vpc_id" {
-  description = "VPC ID for the EKS cluster, used by AWS Load Balancer Controller"
-  type        = string
-}
 
-############################
 # KEDA
-############################
 
 variable "enable_keda" {
   description = "Enable KEDA (Kubernetes Event-driven Autoscaling)"
@@ -207,4 +198,19 @@ variable "enable_keda" {
 variable "keda_helm_version" {
   description = "Helm chart version for KEDA"
   type        = string
+}
+
+# Locals — shared count conditions
+# Centralises the repetitive count logic used across all addon resources.
+# irsa_ready: IRSA is configured and helm deployments are not skipped
+# helm_ready: helm deployments are not skipped (for addons that don't need IRSA)
+
+
+locals {
+  irsa_ready = (
+    !var.skip_helm_deployments &&
+    var.openid_provider_arn != null &&
+    var.openid_provider_arn != ""
+  )
+  helm_ready = !var.skip_helm_deployments
 }

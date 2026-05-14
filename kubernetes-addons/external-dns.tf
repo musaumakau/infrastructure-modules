@@ -1,6 +1,7 @@
 # This file defines the resources for deploying External DNS as an EKS addon using Helm.
+
 data "aws_iam_policy_document" "external_dns" {
-  count = var.enable_external_dns && var.openid_provider_arn != null && var.openid_provider_arn != "" ? 1 : 0
+  count = local.irsa_ready && var.enable_external_dns ? 1 : 0
 
   statement {
     actions = ["sts:AssumeRoleWithWebIdentity"]
@@ -20,7 +21,7 @@ data "aws_iam_policy_document" "external_dns" {
 }
 
 resource "aws_iam_role" "external_dns" {
-  count              = var.enable_external_dns && var.openid_provider_arn != null && var.openid_provider_arn != "" ? 1 : 0
+  count              = local.irsa_ready && var.enable_external_dns ? 1 : 0
   name               = "${var.eks_name}-external-dns"
   assume_role_policy = data.aws_iam_policy_document.external_dns[0].json
 
@@ -30,7 +31,7 @@ resource "aws_iam_role" "external_dns" {
 }
 
 resource "aws_iam_policy" "external_dns" {
-  count = var.enable_external_dns && var.openid_provider_arn != null && var.openid_provider_arn != "" ? 1 : 0
+  count = local.irsa_ready && var.enable_external_dns ? 1 : 0
   name  = "${var.eks_name}-external-dns"
 
   policy = jsonencode({
@@ -61,13 +62,13 @@ resource "aws_iam_policy" "external_dns" {
 }
 
 resource "aws_iam_role_policy_attachment" "external_dns" {
-  count      = var.enable_external_dns && var.openid_provider_arn != null && var.openid_provider_arn != "" ? 1 : 0
+  count      = local.irsa_ready && var.enable_external_dns ? 1 : 0
   role       = aws_iam_role.external_dns[0].name
   policy_arn = aws_iam_policy.external_dns[0].arn
 }
 
 resource "helm_release" "external_dns" {
-  count = var.skip_helm_deployments || !var.enable_external_dns || var.openid_provider_arn == null || var.openid_provider_arn == "" ? 0 : 1
+  count = local.irsa_ready && var.enable_external_dns ? 1 : 0
 
   name             = "external-dns"
   repository       = "https://kubernetes-sigs.github.io/external-dns/"
@@ -91,5 +92,5 @@ resource "helm_release" "external_dns" {
     value = var.external_dns_domain_filter
   }
 
-  depends_on = [aws_iam_role_policy_attachment.external_dns]
+  depends_on = [aws_iam_role_policy_attachment.external_dns, helm_release.aws_lbc]
 }
