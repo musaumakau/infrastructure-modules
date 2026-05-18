@@ -35,3 +35,10 @@ override.tf.json
 # Ignore CLI configuration files
 .terraformrc
 terraform.rc
+
+# Infracost cached pricing database — generated locally, not needed in version control
+.infracost/pricing.gob
+**/pricing.gob
+
+# tfenv version file — not needed in version control
+1.7.0

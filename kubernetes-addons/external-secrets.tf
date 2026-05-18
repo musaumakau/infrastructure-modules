@@ -1,6 +1,5 @@
-
 data "aws_iam_policy_document" "external_secrets" {
-  count = var.enable_external_secrets && var.openid_provider_arn != null && var.openid_provider_arn != "" ? 1 : 0
+  count = local.irsa_ready && var.enable_external_secrets ? 1 : 0
 
   statement {
     actions = ["sts:AssumeRoleWithWebIdentity"]
@@ -20,7 +19,7 @@ data "aws_iam_policy_document" "external_secrets" {
 }
 
 resource "aws_iam_role" "external_secrets" {
-  count              = var.enable_external_secrets && var.openid_provider_arn != null && var.openid_provider_arn != "" ? 1 : 0
+  count              = local.irsa_ready && var.enable_external_secrets ? 1 : 0
   name               = "${var.eks_name}-external-secrets"
   assume_role_policy = data.aws_iam_policy_document.external_secrets[0].json
 
@@ -30,7 +29,7 @@ resource "aws_iam_role" "external_secrets" {
 }
 
 resource "aws_iam_policy" "external_secrets" {
-  count = var.enable_external_secrets && var.openid_provider_arn != null && var.openid_provider_arn != "" ? 1 : 0
+  count = local.irsa_ready && var.enable_external_secrets ? 1 : 0
   name  = "${var.eks_name}-external-secrets"
 
   policy = jsonencode({
@@ -63,13 +62,13 @@ resource "aws_iam_policy" "external_secrets" {
 }
 
 resource "aws_iam_role_policy_attachment" "external_secrets" {
-  count      = var.enable_external_secrets && var.openid_provider_arn != null && var.openid_provider_arn != "" ? 1 : 0
+  count      = local.irsa_ready && var.enable_external_secrets ? 1 : 0
   role       = aws_iam_role.external_secrets[0].name
   policy_arn = aws_iam_policy.external_secrets[0].arn
 }
 
 resource "helm_release" "external_secrets" {
-  count = var.skip_helm_deployments || !var.enable_external_secrets || var.openid_provider_arn == null || var.openid_provider_arn == "" ? 0 : 1
+  count = local.irsa_ready && var.enable_external_secrets ? 1 : 0
 
   name             = "external-secrets"
   repository       = "https://charts.external-secrets.io"
@@ -84,5 +83,4 @@ resource "helm_release" "external_secrets" {
   }
 
   depends_on = [aws_iam_role_policy_attachment.external_secrets, helm_release.aws_lbc]
-
 }

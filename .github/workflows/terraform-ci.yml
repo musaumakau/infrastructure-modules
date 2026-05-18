@@ -20,6 +20,7 @@ jobs:
           - vpc
           - eks
           - kubernetes-addons
+          - cicd-state
     defaults:
       run:
         working-directory: ./${{ matrix.module }}
@@ -45,6 +46,7 @@ jobs:
         uses: terraform-linters/setup-tflint@v4
         with:
           tflint_version: latest
+
       - run: tflint --init && tflint
 
       - name: Checkov Security Scan
@@ -62,7 +64,8 @@ jobs:
         module:
           - vpc
           - eks
-          # kubernetes-addons
+          # kubernetes-addons excluded — depends on live EKS cluster
+          # cicd-state excluded — bootstrap resource, not part of automated pipeline
       fail-fast: false
     steps:
       - name: Checkout infrastructure-modules
@@ -102,7 +105,11 @@ jobs:
           cd infrastructure-live/Dev/${{ matrix.module }}
           terragrunt init --upgrade
           terragrunt plan --non-interactive -out=tfplan.binary
-          terragrunt show -json tfplan.binary > tfplan.json
+
+          # terraform show must run from the cache dir where the plan binary was written
+          CACHE_DIR=$(find .terragrunt-cache -name "tfplan.binary" | head -1 | xargs dirname)
+          terraform -chdir="$CACHE_DIR" show -json tfplan.binary \
+            > $GITHUB_WORKSPACE/infrastructure-live/Dev/${{ matrix.module }}/tfplan.json
 
       - name: Score blast radius
         id: score
@@ -117,16 +124,16 @@ jobs:
 
           action_scores = {'create': 1, 'update': 2, 'delete': 10, 'replace': 8}
           resource_multipliers = {
-              'aws_eks_cluster':     20,
-              'aws_rds_instance':    15,
-              'aws_iam_role':         8,
-              'aws_security_group':   6,
-              'aws_vpc':             15,
-              'aws_subnet':           8,
-              'aws_kms_key':         10,
-              'aws_s3_bucket':        6,
-              'helm_release':         5,
-              'kubernetes_manifest':  4,
+              'aws_eks_cluster':    20,
+              'aws_rds_instance':   15,
+              'aws_iam_role':        8,
+              'aws_security_group':  6,
+              'aws_vpc':            15,
+              'aws_subnet':          8,
+              'aws_kms_key':        10,
+              'aws_s3_bucket':       6,
+              'helm_release':        5,
+              'kubernetes_manifest': 4,
           }
 
           changes, score = [], 0
@@ -188,18 +195,17 @@ jobs:
             const total     = ${{ steps.score.outputs.total }};
             const deletions = ${{ steps.score.outputs.deletions }};
             const module    = '${{ matrix.module }}';
-            const emoji     = score > 100 ? '🔴' : score > 50 ? '🟡' : '🟢';
             const status    = score > 150
-              ? '⛔ **Blocked** — add `blast-radius-override: <reason>` to PR description'
+              ? 'BLOCKED — add `blast-radius-override: <reason>` to PR description'
               : score > 50
-              ? '⚠️ **Elevated** — review carefully'
-              : '✅ **Low risk**';
+              ? 'ELEVATED — review carefully'
+              : 'LOW RISK';
 
             await github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner:        context.repo.owner,
               repo:         context.repo.repo,
-              body: `### ${emoji} Blast Radius — \`${module}\`
+              body: `### Blast Radius — \`${module}\`
 
             | Metric | Value |
             |---|---|
@@ -207,7 +213,7 @@ jobs:
             | Deletions | ${deletions} |
             | Score | ${score} |
 
-            ${status}`
+            **${status}**`
             });
 
       - name: Fail if score exceeds limit
@@ -232,6 +238,48 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Auto-tag changed modules
+        env:
+          GITHUB_TOKEN: ${{ secrets.REPO_DISPATCH_PAT }}
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          CHANGED_CHANGELOGS=$(git diff --name-only HEAD~1...HEAD \
+            | grep 'CHANGELOG.md' \
+            | xargs -I {} dirname {})
+
+          if [ -z "$CHANGED_CHANGELOGS" ]; then
+            echo "No CHANGELOG changes detected — skipping auto-tag"
+            exit 0
+          fi
+
+          for MODULE in $CHANGED_CHANGELOGS; do
+            VERSION=$(grep -m1 '^## v' ${MODULE}/CHANGELOG.md \
+              | sed 's/## //')
+
+            if [ -z "$VERSION" ]; then
+              echo "Could not parse version from ${MODULE}/CHANGELOG.md — skipping"
+              continue
+            fi
+
+            TAG="${MODULE}-${VERSION}"
+
+            if git ls-remote --tags origin "$TAG" | grep -q "$TAG"; then
+              echo "Tag $TAG already exists — skipping"
+              continue
+            fi
+
+            echo "Creating tag: $TAG"
+            git tag "$TAG"
+            git push origin "$TAG"
+          done
+
       - name: Trigger infrastructure-live pipeline
         env:
           GITHUB_TOKEN: ${{ secrets.REPO_DISPATCH_PAT }}
@@ -245,4 +293,4 @@ jobs:
               "client_payload": {
                 "sha": "${{ github.sha }}"
               }
-            }'
+            }

@@ -1,8 +1,7 @@
 resource "aws_launch_template" "eks_nodes" {
   for_each = var.node_groups
 
-  name_prefix = "${var.env}-${var.eks_name}-${each.key}-"
-
+  name_prefix            = "${var.env}-${var.eks_name}-${each.key}-"
   vpc_security_group_ids = [aws_security_group.eks_nodes.id]
 
   block_device_mappings {
@@ -33,11 +32,10 @@ resource "aws_eks_node_group" "this" {
   cluster_name    = aws_eks_cluster.this.name
   node_group_name = each.key
   node_role_arn   = aws_iam_role.nodes.arn
-
-  subnet_ids = var.subnet_ids
-
-  capacity_type  = each.value.capacity_type
-  instance_types = each.value.instance_types
+  subnet_ids      = var.subnet_ids
+  capacity_type   = each.value.capacity_type
+  instance_types  = each.value.instance_types
+  ami_type        = each.value.ami_type
 
   launch_template {
     id      = aws_launch_template.eks_nodes[each.key].id
@@ -54,14 +52,25 @@ resource "aws_eks_node_group" "this" {
     max_unavailable = 1
   }
 
-  labels = {
-    role = each.key
+  # Labels from variable merged with the node group key
+  labels = merge(
+    { role = each.key },
+    each.value.labels
+  )
+
+  dynamic "taint" {
+    for_each = each.value.taints
+    content {
+      key    = taint.value.key
+      value  = taint.value.value
+      effect = taint.value.effect
+    }
   }
 
   depends_on = [aws_iam_role_policy_attachment.nodes]
+
   tags = merge(var.common_tags, {
     Name = "${var.env}-${var.eks_name}-${each.key}-node-group"
     Type = "EKSNodeGroup"
   })
-
 }

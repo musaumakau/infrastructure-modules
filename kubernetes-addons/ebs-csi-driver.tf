@@ -1,6 +1,6 @@
 
 data "aws_iam_policy_document" "ebs_csi" {
-  count = var.enable_ebs_csi_driver && var.openid_provider_arn != null && var.openid_provider_arn != "" ? 1 : 0
+  count = local.irsa_ready && var.enable_ebs_csi_driver ? 1 : 0
 
   statement {
     actions = ["sts:AssumeRoleWithWebIdentity"]
@@ -20,7 +20,7 @@ data "aws_iam_policy_document" "ebs_csi" {
 }
 
 resource "aws_iam_role" "ebs_csi" {
-  count              = var.enable_ebs_csi_driver && var.openid_provider_arn != null && var.openid_provider_arn != "" ? 1 : 0
+  count              = local.irsa_ready && var.enable_ebs_csi_driver ? 1 : 0
   name               = "${var.eks_name}-ebs-csi"
   assume_role_policy = data.aws_iam_policy_document.ebs_csi[0].json
 
@@ -30,13 +30,13 @@ resource "aws_iam_role" "ebs_csi" {
 }
 
 resource "aws_iam_role_policy_attachment" "ebs_csi" {
-  count      = var.enable_ebs_csi_driver && var.openid_provider_arn != null && var.openid_provider_arn != "" ? 1 : 0
+  count      = local.irsa_ready && var.enable_ebs_csi_driver ? 1 : 0
   role       = aws_iam_role.ebs_csi[0].name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
 }
 
 resource "aws_eks_addon" "ebs_csi" {
-  count                    = var.enable_ebs_csi_driver && var.openid_provider_arn != null && var.openid_provider_arn != "" ? 1 : 0
+  count                    = local.irsa_ready && var.enable_ebs_csi_driver ? 1 : 0
   cluster_name             = var.eks_name
   addon_name               = "aws-ebs-csi-driver"
   addon_version            = var.ebs_csi_addon_version
@@ -50,7 +50,7 @@ resource "aws_eks_addon" "ebs_csi" {
 }
 
 resource "kubernetes_storage_class" "gp3" {
-  count = var.enable_ebs_csi_driver ? 1 : 0
+  count = local.helm_ready && var.enable_ebs_csi_driver ? 1 : 0
 
   metadata {
     name = "gp3"

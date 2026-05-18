@@ -31,5 +31,8 @@ resource "helm_release" "loki" {
     value = "false"
   }
 
-  depends_on = [helm_release.kube_prometheus_stack]
+  depends_on = [
+    helm_release.kube_prometheus_stack,
+    aws_eks_addon.ebs_csi, # EBS CSI must be ready before Loki PVC can provision
+  ]
 }

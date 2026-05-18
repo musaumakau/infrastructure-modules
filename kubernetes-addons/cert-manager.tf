@@ -1,6 +1,5 @@
-
 data "aws_iam_policy_document" "cert_manager" {
-  count = var.enable_cert_manager && var.openid_provider_arn != null && var.openid_provider_arn != "" ? 1 : 0
+  count = local.irsa_ready && var.enable_cert_manager ? 1 : 0
 
   statement {
     actions = ["sts:AssumeRoleWithWebIdentity"]
@@ -20,7 +19,7 @@ data "aws_iam_policy_document" "cert_manager" {
 }
 
 resource "aws_iam_role" "cert_manager" {
-  count              = var.enable_cert_manager && var.openid_provider_arn != null && var.openid_provider_arn != "" ? 1 : 0
+  count              = local.irsa_ready && var.enable_cert_manager ? 1 : 0
   name               = "${var.eks_name}-cert-manager"
   assume_role_policy = data.aws_iam_policy_document.cert_manager[0].json
 
@@ -30,7 +29,7 @@ resource "aws_iam_role" "cert_manager" {
 }
 
 resource "aws_iam_policy" "cert_manager" {
-  count = var.enable_cert_manager && var.openid_provider_arn != null && var.openid_provider_arn != "" ? 1 : 0
+  count = local.irsa_ready && var.enable_cert_manager ? 1 : 0
   name  = "${var.eks_name}-cert-manager"
 
   policy = jsonencode({
@@ -58,18 +57,20 @@ resource "aws_iam_policy" "cert_manager" {
   })
 
   tags = {
-    "eks_addon" = "cert-manager"
+    "eks_addon"                = "cert-manager"
+    "checkov:skip=CKV_AWS_355" = "cert-manager requires wildcard to list hosted zones"
+    "checkov:skip=CKV_AWS_290" = "route53:ListHostedZonesByName requires wildcard resource"
   }
 }
 
 resource "aws_iam_role_policy_attachment" "cert_manager" {
-  count      = var.enable_cert_manager && var.openid_provider_arn != null && var.openid_provider_arn != "" ? 1 : 0
+  count      = local.irsa_ready && var.enable_cert_manager ? 1 : 0
   role       = aws_iam_role.cert_manager[0].name
   policy_arn = aws_iam_policy.cert_manager[0].arn
 }
 
 resource "helm_release" "cert_manager" {
-  count = var.skip_helm_deployments || !var.enable_cert_manager || var.openid_provider_arn == null || var.openid_provider_arn == "" ? 0 : 1
+  count = local.irsa_ready && var.enable_cert_manager ? 1 : 0
 
   name             = "cert-manager"
   repository       = "https://charts.jetstack.io"

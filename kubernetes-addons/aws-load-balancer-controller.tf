@@ -1,6 +1,7 @@
-#AWS Load Balancer Controller IAM Role and Helm Chart Deployment
+# AWS Load Balancer Controller IAM Role and Helm Chart Deployment
+
 data "aws_iam_policy_document" "aws_lbc" {
-  count = var.enable_aws_lbc && var.openid_provider_arn != null && var.openid_provider_arn != "" ? 1 : 0
+  count = local.irsa_ready && var.enable_aws_lbc ? 1 : 0
 
   statement {
     actions = ["sts:AssumeRoleWithWebIdentity"]
@@ -20,7 +21,7 @@ data "aws_iam_policy_document" "aws_lbc" {
 }
 
 resource "aws_iam_role" "aws_lbc" {
-  count              = var.enable_aws_lbc && var.openid_provider_arn != null && var.openid_provider_arn != "" ? 1 : 0
+  count              = local.irsa_ready && var.enable_aws_lbc ? 1 : 0
   name               = "${var.eks_name}-aws-lbc"
   assume_role_policy = data.aws_iam_policy_document.aws_lbc[0].json
 
@@ -30,7 +31,7 @@ resource "aws_iam_role" "aws_lbc" {
 }
 
 resource "aws_iam_policy" "aws_lbc" {
-  count  = var.enable_aws_lbc && var.openid_provider_arn != null && var.openid_provider_arn != "" ? 1 : 0
+  count  = local.irsa_ready && var.enable_aws_lbc ? 1 : 0
   name   = "${var.eks_name}-aws-lbc"
   policy = file("${path.module}/policies/aws-lbc-policy.json")
 
@@ -40,13 +41,13 @@ resource "aws_iam_policy" "aws_lbc" {
 }
 
 resource "aws_iam_role_policy_attachment" "aws_lbc" {
-  count      = var.enable_aws_lbc && var.openid_provider_arn != null && var.openid_provider_arn != "" ? 1 : 0
+  count      = local.irsa_ready && var.enable_aws_lbc ? 1 : 0
   role       = aws_iam_role.aws_lbc[0].name
   policy_arn = aws_iam_policy.aws_lbc[0].arn
 }
 
 resource "helm_release" "aws_lbc" {
-  count = var.skip_helm_deployments || !var.enable_aws_lbc || var.openid_provider_arn == null || var.openid_provider_arn == "" ? 0 : 1
+  count = local.irsa_ready && var.enable_aws_lbc ? 1 : 0
 
   name       = "aws-load-balancer-controller"
   repository = "https://aws.github.io/eks-charts"
@@ -69,7 +70,6 @@ resource "helm_release" "aws_lbc" {
     value = aws_iam_role.aws_lbc[0].arn
   }
 
-  # Recommended for production stability
   set {
     name  = "replicaCount"
     value = "2"
@@ -87,4 +87,3 @@ resource "helm_release" "aws_lbc" {
 
   depends_on = [aws_iam_role_policy_attachment.aws_lbc]
 }
-
