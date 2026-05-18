@@ -105,7 +105,11 @@ jobs:
           cd infrastructure-live/Dev/${{ matrix.module }}
           terragrunt init --upgrade
           terragrunt plan --non-interactive -out=tfplan.binary
-          terragrunt show -json tfplan.binary > tfplan.json
+
+          # terraform show must run from the cache dir where the plan binary was written
+          CACHE_DIR=$(find .terragrunt-cache -name "tfplan.binary" | head -1 | xargs dirname)
+          terraform -chdir="$CACHE_DIR" show -json tfplan.binary \
+            > $GITHUB_WORKSPACE/infrastructure-live/Dev/${{ matrix.module }}/tfplan.json
 
       - name: Score blast radius
         id: score
@@ -289,4 +293,4 @@ jobs:
               "client_payload": {
                 "sha": "${{ github.sha }}"
               }
-            }'
+            }
