@@ -286,13 +286,18 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.REPO_DISPATCH_PAT }}
         run: |
+          PAYLOAD=$(cat <<EOF
+          {
+            "event_type": "trigger-deploy",
+            "client_payload": {
+              "sha": "${{ github.sha }}"
+            }
+          }
+          EOF
+          )
+
           curl -X POST \
             -H "Accept: application/vnd.github+json" \
             -H "Authorization: token $GITHUB_TOKEN" \
             https://api.github.com/repos/musaumakau/infrastructure-live/dispatches \
-            -d '{
-              "event_type": "trigger-deploy",
-              "client_payload": {
-                "sha": "${{ github.sha }}"
-              }
-            }
+            -d "$PAYLOAD"
