@@ -250,6 +250,9 @@ jobs:
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
+          # Configure git to use the PAT for push operations
+          git remote set-url origin https://x-access-token:${{ secrets.REPO_DISPATCH_PAT }}@github.com/musaumakau/infrastructure-modules.git
+
           CHANGED_CHANGELOGS=$(git diff --name-only HEAD~1...HEAD \
             | grep 'CHANGELOG.md' \
             | xargs -I {} dirname {})
@@ -279,7 +282,6 @@ jobs:
             git tag "$TAG"
             git push origin "$TAG"
           done
-
       - name: Trigger infrastructure-live pipeline
         env:
           GITHUB_TOKEN: ${{ secrets.REPO_DISPATCH_PAT }}
