@@ -253,7 +253,7 @@ jobs:
           # Configure git to use the PAT for push operations
           git remote set-url origin https://x-access-token:${{ secrets.REPO_DISPATCH_PAT }}@github.com/musaumakau/infrastructure-modules.git
 
-          CHANGED_CHANGELOGS=$(git diff --name-only HEAD~1..HEAD \
+          CHANGED_CHANGELOGS=$(git diff --name-only HEAD~1...HEAD \
             | grep 'CHANGELOG.md' \
             | xargs -I {} dirname {})
 
