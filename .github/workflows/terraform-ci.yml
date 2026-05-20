@@ -211,8 +211,12 @@ jobs:
       # ── trivy ──────────────────────────────────────────────────────────────
       # output path must be absolute — trivy-action resolves relative to the
       # container working dir which differs from $GITHUB_WORKSPACE
+      #
+      # IMPORTANT: tags 0.0.1–0.34.2 were compromised in a supply chain attack
+      # on 2026-03-19. v0.35.0 is the first safe immutable release. Using
+      # v0.36.0 (latest as of 2026-04-22). Never pin below v0.35.0.
       - name: Run trivy
-        uses: aquasecurity/trivy-action@0.28.0  # pinned: aquasecurity/trivy-action 0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type:  config
           scan-ref:   ./${{ matrix.module }}
