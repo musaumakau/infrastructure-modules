@@ -205,14 +205,18 @@ jobs:
       # ── checkov ────────────────────────────────────────────────────────────
       - name: Run checkov
         run: |
-          # Redirect stdout — avoids --output-file-path filename ambiguity across checkov versions
+          # --quiet suppresses progress bars and info lines that corrupt the SARIF JSON
+          # when redirecting stdout. --no-guide strips doc URLs from output.
+          # || true — soft fail, findings surface via SARIF upload to Security tab.
           checkov \
             --directory ./${{ matrix.module }} \
             --framework terraform \
             --output sarif \
+            --quiet \
+            --no-guide \
             --soft-fail \
             > $GITHUB_WORKSPACE/checkov-results.sarif \
-            || true   # soft fail — findings surface via SARIF upload
+            || true
 
       - name: Upload checkov SARIF
         uses: github/codeql-action/upload-sarif@v4
