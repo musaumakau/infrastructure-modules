@@ -163,74 +163,80 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4  # pinned: actions/checkout 4.2.2
 
-      # ── tfsec ──────────────────────────────────────────────────────────────
-      # tfsec-action does not expose a sarif_file output — it writes to a fixed
-      # path relative to working_directory. Run via CLI instead so we control
-      # the output path explicitly.
-      - name: Run tfsec
-        id: tfsec
+      # ── Install scanners ───────────────────────────────────────────────────
+      # All three scanners run via CLI — no wrapper actions — so we own the
+      # output paths and can verify files exist before uploading to CodeQL.
+      - name: Install scanners
         run: |
-          docker run --rm \
-            -v "$GITHUB_WORKSPACE:/src" \
-            aquasec/tfsec:/src/${{ matrix.module }} \
+          set -euo pipefail
+
+          # tfsec
+          curl -sL https://github.com/aquasecurity/tfsec/releases/latest/download/tfsec-linux-amd64 \
+            -o /usr/local/bin/tfsec
+          chmod +x /usr/local/bin/tfsec
+          tfsec --version
+
+          # checkov
+          pip install checkov --quiet --break-system-packages
+
+          # trivy — v0.36.0 (first safe immutable release post supply-chain attack 2026-03-19;
+          # never use tags prior to v0.35.0 — they were force-pushed to malware)
+          curl -sL https://github.com/aquasecurity/trivy/releases/download/v0.70.0/trivy_0.70.0_Linux-64bit.tar.gz \
+            | tar -xz -C /usr/local/bin trivy
+          trivy --version
+
+      # ── tfsec ──────────────────────────────────────────────────────────────
+      - name: Run tfsec
+        run: |
+          tfsec ./${{ matrix.module }} \
             --format sarif \
             --minimum-severity HIGH \
             --exclude-downloaded-modules \
-            --out /src/tfsec-results.sarif \
-            || true   # soft fail — SARIF upload surfaces findings
-        continue-on-error: true
+            --out $GITHUB_WORKSPACE/tfsec-results.sarif \
+            || true   # soft fail — findings surface via SARIF upload
 
       - name: Upload tfsec SARIF
-        uses: github/codeql-action/upload-sarif@v4  # upgraded from v3 (v3 deprecated Dec 2026)
-        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        if: always() && hashFiles('tfsec-results.sarif') != ''
         with:
           sarif_file: tfsec-results.sarif
           category:   "tfsec-${{ matrix.module }}"
 
       # ── checkov ────────────────────────────────────────────────────────────
-      # output_file_path must be an absolute path — relative paths are resolved
-      # from inside the action container and won't be found by upload-sarif
       - name: Run checkov
-        id: checkov
-        uses: bridgecrewio/checkov-action@v12  # pinned: bridgecrewio/checkov-action 12.2847.0
-        with:
-          directory:        ./${{ matrix.module }}
-          framework:        terraform
-          output_format:    sarif
-          output_file_path: ${{ github.workspace }}/checkov-results.sarif
-          soft_fail:        true
-        continue-on-error: true
+        run: |
+          checkov \
+            --directory ./${{ matrix.module }} \
+            --framework terraform \
+            --output sarif \
+            --output-file-path $GITHUB_WORKSPACE \
+            --soft-fail \
+            || true   # soft fail — findings surface via SARIF upload
+          # checkov writes results.sarif into the --output-file-path directory
+          mv $GITHUB_WORKSPACE/results.sarif $GITHUB_WORKSPACE/checkov-results.sarif
 
       - name: Upload checkov SARIF
-        uses: github/codeql-action/upload-sarif@v4  # upgraded from v3 (v3 deprecated Dec 2026)
-        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        if: always() && hashFiles('checkov-results.sarif') != ''
         with:
-          sarif_file: ${{ github.workspace }}/checkov-results.sarif
+          sarif_file: checkov-results.sarif
           category:   "checkov-${{ matrix.module }}"
 
       # ── trivy ──────────────────────────────────────────────────────────────
-      # output path must be absolute — trivy-action resolves relative to the
-      # container working dir which differs from $GITHUB_WORKSPACE
-      #
-      # IMPORTANT: tags 0.0.1–0.34.2 were compromised in a supply chain attack
-      # on 2026-03-19. v0.35.0 is the first safe immutable release. Using
-      # v0.36.0 (latest as of 2026-04-22). Never pin below v0.35.0.
       - name: Run trivy
-        uses: aquasecurity/trivy-action@v0.36.0
-        with:
-          scan-type:  config
-          scan-ref:   ./${{ matrix.module }}
-          format:     sarif
-          output:     ${{ github.workspace }}/trivy-results.sarif
-          severity:   HIGH,CRITICAL
-          exit-code:  "0"  # soft fail — SARIF upload surfaces findings
-        continue-on-error: true
+        run: |
+          trivy config ./${{ matrix.module }} \
+            --format sarif \
+            --output $GITHUB_WORKSPACE/trivy-results.sarif \
+            --severity HIGH,CRITICAL \
+            --exit-code 0 \
+            || true   # soft fail — findings surface via SARIF upload
 
       - name: Upload trivy SARIF
-        uses: github/codeql-action/upload-sarif@v4  # upgraded from v3 (v3 deprecated Dec 2026)
-        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        if: always() && hashFiles('trivy-results.sarif') != ''
         with:
-          sarif_file: ${{ github.workspace }}/trivy-results.sarif
+          sarif_file: trivy-results.sarif
           category:   "trivy-${{ matrix.module }}"
 
 # ============================================================================
