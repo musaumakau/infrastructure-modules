@@ -205,9 +205,10 @@ jobs:
       # ── checkov ────────────────────────────────────────────────────────────
       - name: Run checkov
         run: |
-          # --quiet suppresses progress bars and info lines that corrupt the SARIF JSON
-          # when redirecting stdout. --no-guide strips doc URLs from output.
-          # || true — soft fail, findings surface via SARIF upload to Security tab.
+          set -euo pipefail
+
+          # Run checkov, capturing stdout (SARIF) and stderr (logs) separately
+          # so progress/warning lines never corrupt the JSON output
           checkov \
             --directory ./${{ matrix.module }} \
             --framework terraform \
@@ -215,8 +216,21 @@ jobs:
             --quiet \
             --no-guide \
             --soft-fail \
-            > $GITHUB_WORKSPACE/checkov-results.sarif \
-            || true
+            2>$GITHUB_WORKSPACE/checkov-stderr.log \
+            1>$GITHUB_WORKSPACE/checkov-results.sarif
+
+          echo "--- checkov exit: $? ---"
+          echo "--- checkov stderr ---"
+          cat $GITHUB_WORKSPACE/checkov-stderr.log || true
+          echo "--- checkov SARIF (first 5 lines) ---"
+          head -5 $GITHUB_WORKSPACE/checkov-results.sarif || true
+          echo "--- SARIF file size ---"
+          wc -c $GITHUB_WORKSPACE/checkov-results.sarif || true
+
+          # Validate it is real JSON before handing to upload-sarif
+          python3 -c "import json,sys; json.load(open('$GITHUB_WORKSPACE/checkov-results.sarif'))" \
+            && echo "SARIF JSON is valid" \
+            || { echo "ERROR: checkov output is not valid JSON — see head output above"; exit 1; }
 
       - name: Upload checkov SARIF
         uses: github/codeql-action/upload-sarif@v4
