@@ -205,32 +205,61 @@ jobs:
       # ── checkov ────────────────────────────────────────────────────────────
       - name: Run checkov
         run: |
-          set -euo pipefail
+          python3 << 'PYEOF'
+          import subprocess, json, sys, os
 
-          # Run checkov, capturing stdout (SARIF) and stderr (logs) separately
-          # so progress/warning lines never corrupt the JSON output
-          checkov \
-            --directory ./${{ matrix.module }} \
-            --framework terraform \
-            --output sarif \
-            --quiet \
-            --no-guide \
-            --soft-fail \
-            2>$GITHUB_WORKSPACE/checkov-stderr.log \
-            1>$GITHUB_WORKSPACE/checkov-results.sarif
+          sarif_path = os.path.join(os.environ['GITHUB_WORKSPACE'], 'checkov-results.sarif')
+          module     = './${{ matrix.module }}'
 
-          echo "--- checkov exit: $? ---"
-          echo "--- checkov stderr ---"
-          cat $GITHUB_WORKSPACE/checkov-stderr.log || true
-          echo "--- checkov SARIF (first 5 lines) ---"
-          head -5 $GITHUB_WORKSPACE/checkov-results.sarif || true
-          echo "--- SARIF file size ---"
-          wc -c $GITHUB_WORKSPACE/checkov-results.sarif || true
+          result = subprocess.run(
+              [
+                  'checkov',
+                  '--directory', module,
+                  '--framework', 'terraform',
+                  '--output',    'sarif',
+                  '--quiet',
+                  '--no-guide',
+                  '--soft-fail',   # exit 0 even with violations
+              ],
+              capture_output=True,
+              text=True,
+          )
 
-          # Validate it is real JSON before handing to upload-sarif
-          python3 -c "import json,sys; json.load(open('$GITHUB_WORKSPACE/checkov-results.sarif'))" \
-            && echo "SARIF JSON is valid" \
-            || { echo "ERROR: checkov output is not valid JSON — see head output above"; exit 1; }
+          print(f"checkov exit code: {result.returncode}")
+          if result.stderr:
+              print("--- stderr ---")
+              print(result.stderr[:2000])
+
+          # exit 1 = checkov internal crash; exit 2 = violations found (expected)
+          if result.returncode == 1:
+              print("ERROR: checkov crashed")
+              print(result.stdout[:500])
+              sys.exit(1)
+
+          # Strip any non-JSON preamble lines before the opening brace
+          lines  = result.stdout.splitlines()
+          start  = next((i for i, l in enumerate(lines) if l.strip().startswith('{')), None)
+
+          if start is None:
+              print("ERROR: no JSON object found in checkov output")
+              print(result.stdout[:500])
+              sys.exit(1)
+
+          sarif_text = '\n'.join(lines[start:])
+
+          # Validate JSON before writing
+          try:
+              sarif = json.loads(sarif_text)
+          except json.JSONDecodeError as e:
+              print(f"ERROR: checkov output is not valid JSON: {e}")
+              print(sarif_text[:500])
+              sys.exit(1)
+
+          with open(sarif_path, 'w') as f:
+              json.dump(sarif, f, indent=2)
+
+          print(f"SARIF written to {sarif_path} ({os.path.getsize(sarif_path)} bytes)")
+          PYEOF
 
       - name: Upload checkov SARIF
         uses: github/codeql-action/upload-sarif@v4
