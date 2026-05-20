@@ -218,7 +218,7 @@ jobs:
                   '--framework', 'terraform',
                   '--output',    'sarif',
                   '--quiet',
-                  '--no-guide',
+                  # --no-guide removed — not a valid flag in this checkov version
                   '--soft-fail',   # exit 0 even with violations
               ],
               capture_output=True,
