@@ -164,26 +164,32 @@ jobs:
         uses: actions/checkout@v4  # pinned: actions/checkout 4.2.2
 
       # ── tfsec ──────────────────────────────────────────────────────────────
+      # tfsec-action does not expose a sarif_file output — it writes to a fixed
+      # path relative to working_directory. Run via CLI instead so we control
+      # the output path explicitly.
       - name: Run tfsec
         id: tfsec
-        uses: aquasecurity/tfsec-action@v1.0.3  # pinned: aquasecurity/tfsec-action 1.0.3
-        with:
-          working_directory: ./${{ matrix.module }}
-          soft_fail:         true   # SARIF upload handles blocking — don't double-fail
-          format:            sarif
-          additional_args: >
-            --minimum-severity HIGH
-            --exclude-downloaded-modules
+        run: |
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/src" \
+            aquasec/tfsec:/src/${{ matrix.module }} \
+            --format sarif \
+            --minimum-severity HIGH \
+            --exclude-downloaded-modules \
+            --out /src/tfsec-results.sarif \
+            || true   # soft fail — SARIF upload surfaces findings
         continue-on-error: true
 
       - name: Upload tfsec SARIF
-        uses: github/codeql-action/upload-sarif@v3  # pinned: github/codeql-action 3.27.0
+        uses: github/codeql-action/upload-sarif@v4  # upgraded from v3 (v3 deprecated Dec 2026)
         if: always()
         with:
-          sarif_file: results.sarif
+          sarif_file: tfsec-results.sarif
           category:   "tfsec-${{ matrix.module }}"
 
       # ── checkov ────────────────────────────────────────────────────────────
+      # output_file_path must be an absolute path — relative paths are resolved
+      # from inside the action container and won't be found by upload-sarif
       - name: Run checkov
         id: checkov
         uses: bridgecrewio/checkov-action@v12  # pinned: bridgecrewio/checkov-action 12.2847.0
@@ -191,34 +197,36 @@ jobs:
           directory:        ./${{ matrix.module }}
           framework:        terraform
           output_format:    sarif
-          output_file_path: checkov-results.sarif
+          output_file_path: ${{ github.workspace }}/checkov-results.sarif
           soft_fail:        true
         continue-on-error: true
 
       - name: Upload checkov SARIF
-        uses: github/codeql-action/upload-sarif@v3  # pinned: github/codeql-action 3.27.0
+        uses: github/codeql-action/upload-sarif@v4  # upgraded from v3 (v3 deprecated Dec 2026)
         if: always()
         with:
-          sarif_file: checkov-results.sarif
+          sarif_file: ${{ github.workspace }}/checkov-results.sarif
           category:   "checkov-${{ matrix.module }}"
 
       # ── trivy ──────────────────────────────────────────────────────────────
+      # output path must be absolute — trivy-action resolves relative to the
+      # container working dir which differs from $GITHUB_WORKSPACE
       - name: Run trivy
-        uses: aquasecurity/trivy-action@v0.36.0  # pinned: aquasecurity/trivy-action 0.36.0
+        uses: aquasecurity/trivy-action@0.28.0  # pinned: aquasecurity/trivy-action 0.28.0
         with:
           scan-type:  config
           scan-ref:   ./${{ matrix.module }}
           format:     sarif
-          output:     trivy-results.sarif
+          output:     ${{ github.workspace }}/trivy-results.sarif
           severity:   HIGH,CRITICAL
-          exit-code:  "0"  # SARIF upload handles visibility — don't block here
+          exit-code:  "0"  # soft fail — SARIF upload surfaces findings
         continue-on-error: true
 
       - name: Upload trivy SARIF
-        uses: github/codeql-action/upload-sarif@v3  # pinned: github/codeql-action 3.27.0
+        uses: github/codeql-action/upload-sarif@v4  # upgraded from v3 (v3 deprecated Dec 2026)
         if: always()
         with:
-          sarif_file: trivy-results.sarif
+          sarif_file: ${{ github.workspace }}/trivy-results.sarif
           category:   "trivy-${{ matrix.module }}"
 
 # ============================================================================
