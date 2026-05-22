@@ -1,0 +1,55 @@
+name: 'Terraform + Terragrunt setup'
+description: 'Install Terraform, install Terragrunt, configure and restore plugin cache'
+
+inputs:
+  terraform-version:
+    description: 'Version of Terraform to install'
+    required: false
+    default: '1.7.5'
+  terragrunt-version:
+    description: 'Version of Terragrunt to install'
+    required: false
+    default: '0.84.1'          
+  module:
+    description: 'Module path for lock file cache key (e.g. vpc)'
+    required: false
+    default: '.'
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd  # v3.1.2 SHA-pinned
+      with:
+        terraform_version: ${{ inputs.terraform-version }}
+        terraform_wrapper: false
+
+    - name: Install Terragrunt
+      shell: bash
+      run: |
+        set -euo pipefail
+        TG_VERSION="${{ inputs.terragrunt-version }}"
+        curl -sSfL \
+          "https://github.com/gruntwork-io/terragrunt/releases/download/v${TG_VERSION}/terragrunt_linux_amd64" \
+          -o /usr/local/bin/terragrunt
+        chmod +x /usr/local/bin/terragrunt
+        terragrunt --version
+
+    - name: Configure plugin cache dir
+      shell: bash
+      run: |
+        set -euo pipefail
+        mkdir -p "$HOME/.terraform.d/plugin-cache"
+        # Append only if not already set — safe for matrix jobs sharing an env
+        grep -qxF 'plugin_cache_dir = "$HOME/.terraform.d/plugin-cache"' "$HOME/.terraformrc" 2>/dev/null \
+          || echo 'plugin_cache_dir = "$HOME/.terraform.d/plugin-cache"' >> "$HOME/.terraformrc"
+        echo "TF_PLUGIN_CACHE_DIR=$HOME/.terraform.d/plugin-cache" >> "$GITHUB_ENV"
+
+    - name: Restore Terraform plugin cache
+      uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684  # v4.2.3 SHA-pinned
+      with:
+        path: ~/.terraform.d/plugin-cache
+        # Lock file hash per module — prevents cross-module cache poisoning
+        key: tf-plugins-${{ runner.os }}-${{ inputs.terraform-version }}-${{ hashFiles(format('{0}/.terraform.lock.hcl', inputs.module)) }}
+        restore-keys: |
+          tf-plugins-${{ runner.os }}-${{ inputs.terraform-version }}-

@@ -1,0 +1,61 @@
+name: 'Security scanner install'
+description: 'Install tfsec, checkov, trivy with caching'
+
+inputs:
+  tfsec-version:
+    description: 'Version of tfsec to install'
+    required: false
+    default: '1.28.11'
+  trivy-version:
+    description: 'Version of trivy to install'
+    required: false
+    default: '0.70.0'     
+
+runs:
+  using: composite
+  steps:
+    - name: Install tfsec
+      shell: bash
+      run: |
+        set -euo pipefail
+        curl -sSfL \
+          "https://github.com/aquasecurity/tfsec/releases/download/v${{ inputs.tfsec-version }}/tfsec-linux-amd64" \
+          -o /usr/local/bin/tfsec
+        chmod +x /usr/local/bin/tfsec
+        tfsec --version
+
+    - name: Restore pip cache (checkov)
+      uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684  # v4.2.3
+      with:
+        path: ~/.cache/pip
+        key: pip-checkov-${{ runner.os }}-${{ hashFiles('**/requirements*.txt') }}
+        restore-keys: pip-checkov-${{ runner.os }}-
+
+    - name: Install checkov
+      shell: bash
+      run: |
+        set -euo pipefail
+        pip install checkov --quiet --break-system-packages
+
+    - name: Restore Trivy DB cache
+      uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684  # v4.2.3
+      with:
+        path: ~/.cache/trivy
+        # Trivy DB updates daily — key on date so cache auto-invalidates without
+        # manual busting, but still saves the multi-hundred-MB download within a day
+        key: trivy-db-${{ runner.os }}-${{ steps.date.outputs.date }}
+        restore-keys: trivy-db-${{ runner.os }}-
+
+    - name: Get current date (for Trivy cache key)
+      id: date
+      shell: bash
+      run: echo "date=$(date +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+
+    - name: Install trivy
+      shell: bash
+      run: |
+        set -euo pipefail
+        curl -sSfL \
+          "https://github.com/aquasecurity/trivy/releases/download/v${{ inputs.trivy-version }}/trivy_${{ inputs.trivy-version }}_Linux-64bit.tar.gz" \
+          | tar -xz -C /usr/local/bin trivy
+        trivy --version

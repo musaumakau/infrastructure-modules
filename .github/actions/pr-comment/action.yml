@@ -1,0 +1,52 @@
+# .github/actions/pr-comment/action.yml
+name: 'PR comment upsert'
+description: 'Create or update a PR comment identified by a unique marker string'
+
+inputs:
+  marker:
+    description: 'HTML comment used to find and replace an existing comment, e.g. blast-radius-vpc'
+    required: true
+  body:
+    description: 'Full comment body (markdown)'
+    required: true
+  github-token:
+    description: 'GitHub token with permissions to read and write PR comments'
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Upsert PR comment
+      uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea  # v7.0.1 SHA-pinned
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const marker = `<!-- ${{ inputs.marker }} -->`;
+          const body   = `${marker}\n${{ inputs.body }}`;
+
+          const { data: comments } = await github.rest.issues.listComments({
+            owner:        context.repo.owner,
+            repo:         context.repo.repo,
+            issue_number: context.issue.number,
+          });
+
+          const existing = comments.find(c =>
+            c.user.type === 'Bot' && c.body.startsWith(marker)
+          );
+
+          if (existing) {
+            await github.rest.issues.updateComment({
+              owner:      context.repo.owner,
+              repo:       context.repo.repo,
+              comment_id: existing.id,
+              body,
+            });
+          } else {
+            await github.rest.issues.createComment({
+              owner:        context.repo.owner,
+              repo:         context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });
+          }
+          
