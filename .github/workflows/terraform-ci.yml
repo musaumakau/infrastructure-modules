@@ -118,6 +118,20 @@ jobs:
       REPO_DISPATCH_PAT:      ${{ secrets.REPO_DISPATCH_PAT }}
       GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
 
+   # ── 5b. Infracost + policy (PR only, plannable modules) ─────────────────────
+  infracost:
+    name: Cost & policy
+    needs: [plan-and-score, detect-changes]
+    if: |
+      github.event_name == 'pull_request' &&
+      needs.detect-changes.outputs.plannable-modules != '[]'
+    uses: ./.github/workflows/reusable-infracost.yml
+    with:
+      modules:  ${{ needs.detect-changes.outputs.plannable-modules }}
+      run-id:   ${{ github.run_id }}
+    secrets:
+      INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}   
+
   # ── 6. Dispatch live deploy (push to main only) ──────────────────────────────
   dispatch-live-deploy:
     name: Trigger infra-live deployment

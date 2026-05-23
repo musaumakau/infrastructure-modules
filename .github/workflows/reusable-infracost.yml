@@ -1,0 +1,345 @@
+name: Reusable — Infracost & Policy
+
+on:
+  workflow_call:
+    inputs:
+      modules:
+        description: 'JSON array of modules to analyse, e.g. ["vpc","eks"]'
+        type: string
+        required: true
+      run-id:
+        description: 'GitHub run ID of the plan job — used to download plan artifacts'
+        type: string
+        required: true
+    secrets:
+      INFRACOST_API_KEY:
+        required: true
+
+permissions: {}
+
+jobs:
+  infracost:
+    name: Cost & policy [${{ matrix.module }}]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    permissions:
+      contents:      read
+      id-token:      write
+      pull-requests: write
+
+    strategy:
+      matrix:
+        module: ${{ fromJson(inputs.modules) }}
+      fail-fast: false
+
+    outputs:
+      cost-summary: ${{ steps.cost.outputs.summary }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - name: Setup Infracost
+        uses: infracost/actions/setup@e9d6e6cd65e168e76b0de50ff9957d2fe8bb1832  # v3.0.1
+        with:
+          api-key: ${{ secrets.INFRACOST_API_KEY }}
+
+      - name: Setup OPA
+        uses: open-policy-agent/setup-opa@34a30e8a924d1b03ce2cf7abe97250bbb1f332b5 # v2.2.0
+        with:
+          version: latest
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@5579c002bb4778aa43395ef1df492868a9a1c83f  # v4.0.2
+        with:
+          role-to-assume: arn:aws:iam::649203810550:role/EKSOIDCRoleForPR
+          aws-region: eu-west-1
+
+      # Download plan artifact produced by reusable-plan-and-score.yml
+      # Eliminates the need to re-run terraform init + plan just for OPA
+      - name: Download plan artifact
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: "plan-${{ matrix.module }}-${{ inputs.run-id }}"
+          path: plans/${{ matrix.module }}
+
+      - name: Verify plan artifact
+        run: |
+          set -euo pipefail
+          echo "::group::Plan artifact contents"
+          ls -lh plans/${{ matrix.module }}/
+          python3 -c "
+          import json
+          with open('plans/${{ matrix.module }}/tfplan.json') as f:
+              plan = json.load(f)
+          changes = [r for r in plan.get('resource_changes', []) if r['change']['actions'] != ['no-op']]
+          print(f'Plan valid — {len(changes)} resource changes')
+          "
+          echo "::endgroup::"
+
+      # ── Infracost baseline (base branch) ────────────────────────────────────
+      - name: Generate baseline cost estimate
+        run: |
+          set -euo pipefail
+          echo "::group::Infracost baseline"
+          git fetch origin ${{ github.event.pull_request.base.ref }} --depth=1
+          git checkout FETCH_HEAD -- ${{ matrix.module }}/
+          infracost breakdown \
+            --path ${{ matrix.module }}/ \
+            --format json \
+            --out-file /tmp/infracost-base-${{ matrix.module }}.json
+          echo "::endgroup::"
+
+      # ── Infracost PR branch ──────────────────────────────────────────────────
+      - name: Restore PR branch files
+        run: git checkout HEAD -- ${{ matrix.module }}/
+
+      - name: Generate PR cost estimate
+        run: |
+          set -euo pipefail
+          echo "::group::Infracost PR branch"
+          infracost breakdown \
+            --path ${{ matrix.module }}/ \
+            --format json \
+            --out-file /tmp/infracost-pr-${{ matrix.module }}.json
+          echo "::endgroup::"
+
+      - name: Generate cost diff
+        id: cost
+        run: |
+          set -euo pipefail
+          echo "::group::Infracost diff"
+          infracost diff \
+            --path ${{ matrix.module }}/ \
+            --format json \
+            --compare-to /tmp/infracost-base-${{ matrix.module }}.json \
+            --out-file /tmp/infracost-diff-${{ matrix.module }}.json
+
+          # Extract summary for aggregation
+          SUMMARY=$(python3 -c "
+          import json
+          with open('/tmp/infracost-diff-${{ matrix.module }}.json') as f:
+              data = json.load(f)
+          diff = data.get('diffTotalMonthlyCost', '0')
+          total = data.get('totalMonthlyCost', '0')
+          currency = data.get('currency', 'USD')
+          sign = '+' if float(diff or 0) >= 0 else ''
+          print(f'{sign}{float(diff or 0):.2f} {currency} (total: {float(total or 0):.2f} {currency})')
+          ")
+          echo "summary=${SUMMARY}" >> "$GITHUB_OUTPUT"
+          echo "::endgroup::"
+
+      # ── OPA tagging policy ───────────────────────────────────────────────────
+      - name: Run tagging policy
+        id: tagging
+        run: |
+          set -euo pipefail
+          echo "::group::OPA tagging policy — ${{ matrix.module }}"
+
+          PLAN_FILE="plans/${{ matrix.module }}/tfplan.json"
+          POLICY_FILE=".infracost/policies/tagging.rego"
+          VIOLATIONS=0
+          UNTAGGED=0
+
+          if [ ! -f "$POLICY_FILE" ]; then
+            echo "::warning::tagging.rego not found — skipping OPA evaluation"
+            echo "tagging_violations=0" >> "$GITHUB_OUTPUT"
+            echo "::endgroup::"
+            exit 0
+          fi
+
+          # Validate policy syntax
+          opa fmt "$POLICY_FILE" > /dev/null 2>&1 || {
+            echo "::error::tagging.rego has syntax errors"
+            opa fmt "$POLICY_FILE" 2>&1
+            exit 1
+          }
+
+          # Run OPA evaluation
+          OPA_RESULT=$(opa eval \
+            --data "$POLICY_FILE" \
+            --input "$PLAN_FILE" \
+            --format json \
+            'data.infracost.policies.tagging.deny[_]' 2>&1) || true
+
+          if [ -n "$OPA_RESULT" ] && [ "$OPA_RESULT" != "[]" ]; then
+            echo "Tagging violations:"
+            echo "$OPA_RESULT" | python3 -c "
+          import json, sys
+          results = json.load(sys.stdin)
+          for r in results:
+              print(f'  • {r.get(\"msg\", r)}')
+            " 2>/dev/null || echo "$OPA_RESULT"
+            VIOLATIONS=$(echo "$OPA_RESULT" | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo 1)
+          else
+            echo "No tagging violations"
+          fi
+
+          # jq-based tag check directly on plan as fallback
+          UNTAGGED=$(python3 -c "
+          import json
+          with open('$PLAN_FILE') as f:
+              plan = json.load(f)
+          required = {'Environment', 'Owner', 'Project', 'CostCenter'}
+          skip_types = {'aws_security_group_rule'}
+          untagged = []
+          for r in plan.get('resource_changes', []):
+              if r['type'] in skip_types: continue
+              actions = r['change']['actions']
+              if 'create' not in actions and 'update' not in actions: continue
+              tags = set((r['change'].get('after') or {}).get('tags', {}).keys())
+              missing = required - tags
+              if missing:
+                  untagged.append(f\"{r['address']} missing: {', '.join(sorted(missing))}\")
+          for u in untagged:
+              print(u)
+          print(f'UNTAGGED_COUNT={len(untagged)}')
+          " 2>/dev/null || echo "UNTAGGED_COUNT=0")
+
+          UNTAGGED_COUNT=$(echo "$UNTAGGED" | grep 'UNTAGGED_COUNT=' | cut -d= -f2 || echo 0)
+          echo "$UNTAGGED" | grep -v 'UNTAGGED_COUNT=' || true
+
+          echo "tagging_violations=${VIOLATIONS}" >> "$GITHUB_OUTPUT"
+          echo "untagged_count=${UNTAGGED_COUNT}" >> "$GITHUB_OUTPUT"
+          echo "::endgroup::"
+
+      # ── OPA governance policy ────────────────────────────────────────────────
+      - name: Run governance policy
+        id: governance
+        run: |
+          set -euo pipefail
+          echo "::group::OPA governance policy — ${{ matrix.module }}"
+
+          POLICY_FILE=".infracost/policies/governance.rego"
+          COST_FILE="/tmp/infracost-pr-${{ matrix.module }}.json"
+          VIOLATIONS=0
+
+          if [ ! -f "$POLICY_FILE" ]; then
+            echo "::warning::governance.rego not found — skipping"
+            echo "governance_violations=0" >> "$GITHUB_OUTPUT"
+            echo "::endgroup::"
+            exit 0
+          fi
+
+          opa fmt "$POLICY_FILE" > /dev/null 2>&1 || {
+            echo "::error::governance.rego has syntax errors"
+            exit 1
+          }
+
+          # Deny violations
+          DENY_RESULT=$(opa eval \
+            --data "$POLICY_FILE" \
+            --input "$COST_FILE" \
+            --format json \
+            'data.infracost.policies.governance.deny[]' 2>&1) || true
+
+          if [ -n "$DENY_RESULT" ] && [ "$DENY_RESULT" != "[]" ]; then
+            echo "Governance violations:"
+            echo "$DENY_RESULT" | python3 -c "
+          import json, sys
+          results = json.load(sys.stdin)
+          for r in results:
+              print(f'  • {r.get(\"msg\", r.get(\"message\", r))}')
+            " 2>/dev/null || echo "$DENY_RESULT"
+            VIOLATIONS=$(echo "$DENY_RESULT" | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo 1)
+          else
+            echo "No governance violations"
+          fi
+
+          # Warnings (non-blocking)
+          WARN_RESULT=$(opa eval \
+            --data "$POLICY_FILE" \
+            --input "$COST_FILE" \
+            --format json \
+            'data.infracost.policies.governance.warn[]' 2>&1) || true
+
+          if [ -n "$WARN_RESULT" ] && [ "$WARN_RESULT" != "[]" ]; then
+            echo "Governance warnings:"
+            echo "$WARN_RESULT" | python3 -c "
+          import json, sys
+          results = json.load(sys.stdin)
+          for r in results:
+              print(f'  ⚠ {r.get(\"msg\", r.get(\"message\", r))}')
+            " 2>/dev/null || echo "$WARN_RESULT"
+          fi
+
+          echo "governance_violations=${VIOLATIONS}" >> "$GITHUB_OUTPUT"
+          echo "::endgroup::"
+
+      # ── Upload diff artifact for aggregation ────────────────────────────────
+      - name: Upload cost diff artifact
+        uses: actions/upload-artifact@5d5d22a31266ced268874388b861e4b58bb5c2f3  # v4.3.1
+        if: always()
+        with:
+          name: "infracost-${{ matrix.module }}-${{ github.run_id }}"
+          path: /tmp/infracost-diff-${{ matrix.module }}.json
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Fail on policy violations
+        run: |
+          set -euo pipefail
+          TAGGING="${{ steps.tagging.outputs.tagging_violations }}"
+          GOVERNANCE="${{ steps.governance.outputs.governance_violations }}"
+          TOTAL=$((${TAGGING:-0} + ${GOVERNANCE:-0}))
+
+          if [ "$TOTAL" -gt 0 ]; then
+            echo "::error::Policy violations: tagging=${TAGGING}, governance=${GOVERNANCE}"
+            exit 1
+          fi
+          echo "All policies passed"
+
+  # ── Aggregated PR comment ──────────────────────────────────────────────────
+  comment:
+    name: Post unified PR comment
+    runs-on: ubuntu-latest
+    needs: [infracost]
+    if: always() && github.event_name == 'pull_request'
+    timeout-minutes: 5
+
+    permissions:
+      pull-requests: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - name: Download all cost diff artifacts
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16  # v4.1.8
+        with:
+          pattern: "infracost-*-${{ github.run_id }}"
+          merge-multiple: true
+          path: cost-diffs
+
+      - name: Setup Infracost
+        uses: infracost/actions/setup@e9d6e6cd65e168e76b0de50ff9957d2fe8bb1832 # v3.0.1
+        with:
+          api-key: ${{ secrets.INFRACOST_API_KEY }}
+
+      - name: Post unified Infracost comment
+        run: |
+          set -euo pipefail
+
+          # Merge all module diffs into one comment
+          DIFF_FILES=$(ls cost-diffs/infracost-diff-*.json 2>/dev/null || true)
+
+          if [ -z "$DIFF_FILES" ]; then
+            echo "::warning::No cost diff files found — skipping comment"
+            exit 0
+          fi
+
+          # infracost comment supports multiple --path flags for merged output
+          PATH_ARGS=""
+          for f in $DIFF_FILES; do
+            PATH_ARGS="$PATH_ARGS --path $f"
+          done
+
+          infracost comment github \
+            $PATH_ARGS \
+            --repo "$GITHUB_REPOSITORY" \
+            --github-token "${{ github.token }}" \
+            --pull-request "${{ github.event.pull_request.number }}" \
+            --behavior update
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
