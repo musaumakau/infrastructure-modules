@@ -95,8 +95,6 @@ jobs:
     uses: .github/workflows/reusable-security-scan.yml
     with:
       modules: ${{ needs.detect-changes.outputs.modules }}
-    secrets:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # ── 5. Plan + blast radius (changed plannable modules) ──────────────────────
   plan-and-score:

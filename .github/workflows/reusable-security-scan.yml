@@ -7,9 +7,7 @@ on:
         description: 'JSON array of modules, e.g. ["vpc","eks"]'
         type: string
         required: true
-    secrets:
-      GITHUB_TOKEN:
-        required: true   # for SARIF upload
+   
 
 permissions: {}
 
