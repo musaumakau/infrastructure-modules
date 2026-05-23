@@ -11,7 +11,7 @@ permissions: {}
 
 # [T2-2] One plan per PR branch — safe to cancel on PR, never cancel on push
 concurrency:
-  group: "tf-checks-${{ github.head_ref || github.ref }}"
+  group: tf-checks-${{ github.head_ref || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
