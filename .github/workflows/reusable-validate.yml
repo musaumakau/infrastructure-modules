@@ -36,7 +36,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
 
       - name: Terraform + Terragrunt setup
-        uses: .github/actions/terraform-setup
+        uses: ./.github/actions/terraform-setup
         with:
           terraform-version: ${{ inputs.terraform-version }}
           module: ${{ matrix.module }}
