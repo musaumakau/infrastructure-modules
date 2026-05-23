@@ -1,0 +1,85 @@
+name: Reusable — Security Scan
+
+on:
+  workflow_call:
+    inputs:
+      modules:
+        description: 'JSON array of modules, e.g. ["vpc","eks"]'
+        type: string
+        required: true
+    secrets:
+      GITHUB_TOKEN:
+        required: true   # for SARIF upload
+
+permissions: {}
+
+jobs:
+  scan:
+    name: "${{ matrix.scanner }} [${{ matrix.module }}]"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    permissions:
+      contents:        read
+      security-events: write   # SARIF upload
+
+    strategy:
+      # scanner × module — all combinations in parallel
+      matrix:
+        scanner: [tfsec, checkov, trivy]
+        module:  ${{ fromJson(inputs.modules) }}
+      fail-fast: false
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - name: Install scanners
+        uses: ./.github/actions/scanner-install
+
+      # ── tfsec ──────────────────────────────────────────────────────────────
+      - name: Run tfsec
+        if: matrix.scanner == 'tfsec'
+        run: |
+          set -euo pipefail
+          tfsec "./${{ matrix.module }}" \
+            --format sarif \
+            --minimum-severity HIGH \
+            --exclude-downloaded-modules \
+            --out "$GITHUB_WORKSPACE/scan-results.sarif" \
+            || true
+
+      # ── checkov ────────────────────────────────────────────────────────────
+      - name: Run checkov
+        if: matrix.scanner == 'checkov'
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          checkov \
+            --directory "./${{ matrix.module }}" \
+            --framework terraform \
+            --output sarif \
+            --soft-fail
+          mv results.sarif scan-results.sarif
+          python3 -c "import json; json.load(open('scan-results.sarif')); print('SARIF JSON valid')"
+
+      # ── trivy ──────────────────────────────────────────────────────────────
+      - name: Run trivy
+        if: matrix.scanner == 'trivy'
+        run: |
+          set -euo pipefail
+          trivy config "./${{ matrix.module }}" \
+            --format sarif \
+            --output "$GITHUB_WORKSPACE/scan-results.sarif" \
+            --severity HIGH,CRITICAL \
+            --exit-code 0 \
+            || true
+
+      # ── Upload SARIF (all scanners share same path now) ────────────────────
+      - name: Upload SARIF to Security tab
+        uses: github/codeql-action/upload-sarif@ff0a06e83cb2de871e5a09832bc6a81e7276941f  # v3.28.18
+        if: always() && hashFiles('scan-results.sarif') != ''
+        with:
+          sarif_file: scan-results.sarif
+          # Category must be unique per scanner × module combination
+          category: "${{ matrix.scanner }}-${{ matrix.module }}"

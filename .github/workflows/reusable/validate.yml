@@ -1,0 +1,70 @@
+name: Reusable — Validate
+
+on:
+  workflow_call:
+    inputs:
+      modules:
+        description: 'JSON array of modules to validate, e.g. ["vpc","eks"]'
+        type: string
+        required: true
+      terraform-version:
+        type: string
+        required: false
+        default: '1.7.5'
+    secrets:
+      # No secrets needed for validate — explicit declaration documents intent
+
+permissions: {}
+
+jobs:
+  validate:
+    name: "Validate [${{ matrix.module }}]"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    permissions:
+      contents: read
+
+    strategy:
+      matrix:
+        module: ${{ fromJson(inputs.modules) }}
+      fail-fast: false
+
+    defaults:
+      run:
+        working-directory: ./${{ matrix.module }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - name: Terraform + Terragrunt setup
+        uses: ./.github/actions/terraform-setup
+        with:
+          terraform-version: ${{ inputs.terraform-version }}
+          module: ${{ matrix.module }}
+
+      - name: Terraform init (no backend)
+        run: terraform init -backend=false
+
+      - name: Terraform validate
+        run: terraform validate
+
+      - name: Terraform format check
+        run: terraform fmt -check -recursive
+
+      - name: Install TFLint
+        uses: terraform-linters/setup-tflint@19a52fbac37dacb22a09518e4ef6ee234f2d4987  # v4.0.0
+
+      - name: Cache TFLint plugins
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684  # v4.2.3
+        with:
+          path: ~/.tflint.d/plugins
+          key: tflint-${{ runner.os }}-${{ hashFiles('.tflint.hcl') }}
+          restore-keys: tflint-${{ runner.os }}-
+
+      - name: TFLint init + run
+        run: |
+          set -euo pipefail
+          tflint --init
+          tflint --format compact
