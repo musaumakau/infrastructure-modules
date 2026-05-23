@@ -106,7 +106,7 @@ jobs:
   # ── 5. Plan + blast radius (changed plannable modules) ──────────────────────
   plan-and-score:
     name: Plan & blast radius
-    needs: [validate]
+    needs: [validate, detect-changes]
     if: |
       (github.event_name == 'pull_request' || github.ref == 'refs/heads/main') &&
       needs.detect-changes.outputs.plannable-modules != '[]'
@@ -121,7 +121,7 @@ jobs:
   # ── 6. Dispatch live deploy (push to main only) ──────────────────────────────
   dispatch-live-deploy:
     name: Trigger infra-live deployment
-    needs: [validate, plan-and-score]
+    needs: [validate, plan-and-score, detect-changes]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     uses: ./.github/workflows/reusable-dispatch.yml
     with:
