@@ -1,0 +1,196 @@
+name: Reusable — Plan & Blast Radius
+
+on:
+  workflow_call:
+    inputs:
+      modules:
+        description: 'JSON array of modules to plan'
+        type: string
+        required: true
+      environment:
+        description: 'Target environment folder in infrastructure-live (Dev/Staging/Prod)'
+        type: string
+        required: false
+        default: 'Dev'
+      terraform-version:
+        type: string
+        required: false
+        default: '1.7.5'
+      blast-radius-limit:
+        type: number
+        required: false
+        default: 150
+    secrets:
+      REPO_DISPATCH_PAT:
+        required: true
+      GRAFANA_ADMIN_PASSWORD:
+        required: true
+    outputs:
+      # Exposes per-module scores to the orchestrator for downstream gating
+      scores-json:
+        description: 'JSON object mapping module → blast radius score'
+        value: ${{ jobs.plan.outputs.scores-json }}
+
+permissions: {}
+
+jobs:
+  plan:
+    name: "Plan [${{ matrix.module }}] → ${{ inputs.environment }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    permissions:
+      contents:      read
+      id-token:      write
+      pull-requests: write
+
+    strategy:
+      matrix:
+        module: ${{ fromJson(inputs.modules) }}
+      fail-fast: false
+
+    outputs:
+      scores-json: ${{ steps.collect.outputs.scores-json }}
+
+    steps:
+      - name: Checkout infrastructure-modules
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - name: Checkout infrastructure-live
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          repository: musaumakau/infrastructure-live
+          token: ${{ secrets.REPO_DISPATCH_PAT }}
+          path: infrastructure-live
+
+      - name: AWS auth
+        uses: ./.github/actions/aws-auth
+        with:
+          session-name-suffix: "plan-${{ matrix.module }}-${{ github.run_id }}"
+
+      - name: Terraform + Terragrunt setup
+        uses: ./.github/actions/terraform-setup
+        with:
+          terraform-version: ${{ inputs.terraform-version }}
+          module: ${{ matrix.module }}
+
+      - name: Speculative plan
+        id: plan
+        env:
+          REPO_DISPATCH_PAT:      ${{ secrets.REPO_DISPATCH_PAT }}
+          GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          cd "infrastructure-live/${{ inputs.environment }}/${{ matrix.module }}"
+          terragrunt init --upgrade
+          terragrunt plan --non-interactive -out=tfplan.binary
+
+          CACHE_DIR=$(find .terragrunt-cache -name "tfplan.binary" -printf '%h\n' | head -1)
+          if [ -z "$CACHE_DIR" ]; then
+            echo "ERROR: could not find tfplan.binary under .terragrunt-cache"
+            exit 1
+          fi
+
+          terraform -chdir="$CACHE_DIR" show -json tfplan.binary \
+            > "$GITHUB_WORKSPACE/tfplan.json"
+
+      - name: Score blast radius
+        id: score
+        run: |
+          python3 << 'EOF'
+          import json, os
+
+          with open(os.environ['GITHUB_WORKSPACE'] + '/tfplan.json') as f:
+              plan = json.load(f)
+
+          action_scores = {'create': 1, 'update': 2, 'delete': 10, 'replace': 8}
+          resource_multipliers = {
+              'aws_eks_cluster': 20, 'aws_rds_instance': 15, 'aws_iam_role': 8,
+              'aws_security_group': 6, 'aws_vpc': 15, 'aws_subnet': 8,
+              'aws_kms_key': 10, 'aws_s3_bucket': 6, 'helm_release': 5,
+              'kubernetes_manifest': 4,
+          }
+
+          changes, score = [], 0
+          for r in plan.get('resource_changes', []):
+              if r['change']['actions'] == ['no-op']:
+                  continue
+              action     = r['change']['actions'][0]
+              multiplier = resource_multipliers.get(r['type'], 1)
+              rscore     = action_scores.get(action, 1) * multiplier
+              score     += rscore
+              changes.append({'address': r['address'], 'type': r['type'],
+                              'actions': r['change']['actions'], 'score': rscore})
+
+          manifest = {
+              'module': os.environ['MODULE'], 'environment': os.environ['ENVIRONMENT'],
+              'pr': os.environ.get('PR_NUMBER', ''), 'commit': os.environ['GITHUB_SHA'],
+              'score': score, 'total_resources': len(changes),
+              'deletions':    sum(1 for c in changes if 'delete'  in c['actions']),
+              'replacements': sum(1 for c in changes if 'replace' in c['actions']),
+              'resources': changes,
+          }
+
+          with open('manifest.json', 'w') as f:
+              json.dump(manifest, f, indent=2)
+
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as gh:
+              gh.write(f"score={score}\n")
+              gh.write(f"total={len(changes)}\n")
+              gh.write(f"deletions={manifest['deletions']}\n")
+              gh.write(f"replacements={manifest['replacements']}\n")
+          EOF
+        env:
+          MODULE:      ${{ matrix.module }}
+          ENVIRONMENT: ${{ inputs.environment }}
+          PR_NUMBER:   ${{ github.event.pull_request.number }}
+
+      - name: Upload manifest to S3
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            KEY="pr-${{ github.event.pull_request.number }}/${{ matrix.module }}/manifest.json"
+          else
+            KEY="deploy-pointer/${{ github.sha }}/${{ matrix.module }}/manifest.json"
+          fi
+          aws s3 cp manifest.json "s3://${{ vars.PLAN_MANIFEST_BUCKET }}/${KEY}"
+          echo "Manifest saved: s3://${{ vars.PLAN_MANIFEST_BUCKET }}/${KEY}"
+
+      - name: Comment blast radius on PR
+        if: github.event_name == 'pull_request'
+        uses: ./.github/actions/pr-comment
+        with:
+          github-token: ${{ github.token }}
+          marker: "blast-radius-${{ matrix.module }}"
+          body: |
+            ### ${{ steps.score.outputs.score > 150 && ':rotating_light:' || steps.score.outputs.score > 50 && ':warning:' || ':white_check_mark:' }} Blast Radius — `${{ matrix.module }}`
+
+            | Metric | Value |
+            |---|---|
+            | Resources affected | ${{ steps.score.outputs.total }} |
+            | Deletions | ${{ steps.score.outputs.deletions }} |
+            | Replacements | ${{ steps.score.outputs.replacements }} |
+            | Score | ${{ steps.score.outputs.score }} |
+
+            **${{ steps.score.outputs.score > 150 && 'BLOCKED — add `blast-radius-override: <reason>` to PR description' || steps.score.outputs.score > 50 && 'ELEVATED — review carefully' || 'LOW RISK' }}**
+
+            *Commit: `${{ github.sha }}` · [${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})*
+
+      - name: Gate on blast radius score
+        if: github.event_name == 'pull_request'
+        run: |
+          set -euo pipefail
+          SCORE="${{ steps.score.outputs.score }}"
+          LIMIT="${{ inputs.blast-radius-limit }}"
+          PR_BODY="${{ github.event.pull_request.body }}"
+
+          if echo "$PR_BODY" | grep -q "blast-radius-override:"; then
+            echo "Override present in PR body — skipping gate"
+            exit 0
+          fi
+
+          if [ "$SCORE" -gt "$LIMIT" ]; then
+            echo "::error::Blast radius score ${SCORE} exceeds limit ${LIMIT} for module ${{ matrix.module }}"
+            exit 1
+          fi
+          echo "Score ${SCORE} within limit ${LIMIT}"
