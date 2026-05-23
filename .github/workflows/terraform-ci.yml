@@ -81,7 +81,7 @@ jobs:
     name: Validate
     needs: [detect-changes]
     if: needs.detect-changes.outputs.has-changes == 'true'
-    uses: .github/workflows/reusable-validate.yml
+    uses: ./.github/workflows/reusable-validate.yml
     with:
       modules: ${{ needs.detect-changes.outputs.modules }}
 
@@ -92,7 +92,7 @@ jobs:
     if: |
       github.event_name == 'pull_request' &&
       needs.detect-changes.outputs.has-changes == 'true'
-    uses: .github/workflows/reusable-security-scan.yml
+    uses: ./.github/workflows/reusable-security-scan.yml
     with:
       modules: ${{ needs.detect-changes.outputs.modules }}
 
@@ -103,7 +103,7 @@ jobs:
     if: |
       (github.event_name == 'pull_request' || github.ref == 'refs/heads/main') &&
       needs.detect-changes.outputs.plannable-modules != '[]'
-    uses: .github/workflows/reusable-plan-and-score.yml
+    uses: ./.github/workflows/reusable-plan-and-score.yml
     with:
       modules:     ${{ needs.detect-changes.outputs.plannable-modules }}
       environment: Dev
@@ -116,7 +116,7 @@ jobs:
     name: Trigger infra-live deployment
     needs: [validate, plan-and-score]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    uses: .github/workflows/reusable-dispatch-live-deploy.yml
+    uses: ./.github/workflows/reusable-dispatch.yml
     with:
       sha: ${{ github.sha }}
     secrets:
