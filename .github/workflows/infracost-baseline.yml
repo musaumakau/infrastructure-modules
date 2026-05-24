@@ -1,4 +1,5 @@
 name: Infracost Baseline
+
 on:
   push:
     branches: [main]
@@ -7,19 +8,52 @@ on:
       - 'vpc/**'
       - 'kubernetes-addons/**'
 
+permissions: {}
+
 jobs:
   baseline:
-    name: Update Cost Baseline
+    name: Update cost baseline
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    permissions:
+      contents: read
+      id-token: write
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@5579c002bb4778aa43395ef1df492868a9a1c83f  # v4.0.2
+        with:
+          role-to-assume: arn:aws:iam::649203810550:role/EKSOIDCRoleForPR
+          aws-region: eu-west-1
+
       - name: Setup Infracost
-        uses: infracost/actions/setup@v2
+        uses: infracost/actions/setup@e9d6e6cd65e168e76b0de50ff9957d2fe8bb1832  # v3.0.1
         with:
           api-key: ${{ secrets.INFRACOST_API_KEY }}
-          version: 0.10.44
-      
-      - name: Generate baseline
+
+      - name: Generate and store baseline
         run: |
-          infracost breakdown --config-file=.infracost/infracost.yml \
-                              --format=table
+          set -euo pipefail
+          echo "::group::Infracost baseline"
+          infracost breakdown \
+            --config-file=.infracost/infracost.yml \
+            --format=json \
+            --out-file=/tmp/infracost-baseline.json
+          echo "::endgroup::"
+
+          echo "::group::Baseline summary"
+          infracost output \
+            --path=/tmp/infracost-baseline.json \
+            --format=table
+          echo "::endgroup::"
+
+      - name: Upload baseline to S3
+        run: |
+          set -euo pipefail
+          aws s3 cp /tmp/infracost-baseline.json \
+            "s3://${{ vars.PLAN_MANIFEST_BUCKET }}/infracost-baseline/main/baseline.json"
+          echo "::notice::Baseline saved to S3"
