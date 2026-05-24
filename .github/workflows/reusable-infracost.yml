@@ -156,22 +156,21 @@ jobs:
             exit 1
           }
 
-          # Run OPA evaluation
+          # With this
           OPA_RESULT=$(opa eval \
             --data "$POLICY_FILE" \
             --input "$PLAN_FILE" \
-            --format json \
-            'data.infracost.policies.tagging.deny[_]' 2>&1) || true
-
-          if [ -n "$OPA_RESULT" ] && [ "$OPA_RESULT" != "[]" ]; then
+            --format raw \
+            'count(data.infracost.policies.tagging.deny)' 2>/dev/null || echo "0")
+          
+            if [ "${OPA_RESULT:-0}" -gt 0 ] 2>/dev/null; then
             echo "Tagging violations:"
-            echo "$OPA_RESULT" | python3 -c "
-          import json, sys
-          results = json.load(sys.stdin)
-          for r in results:
-              print(f'  • {r.get(\"msg\", r)}')
-            " 2>/dev/null || echo "$OPA_RESULT"
-            VIOLATIONS=$(echo "$OPA_RESULT" | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo 1)
+            opa eval \
+              --data "$POLICY_FILE" \
+              --input "$PLAN_FILE" \
+              --format pretty \
+              'data.infracost.policies.tagging.deny' 2>/dev/null || true
+            VIOLATIONS="${OPA_RESULT}"
           else
             echo "No tagging violations"
           fi
@@ -204,7 +203,7 @@ jobs:
           echo "untagged_count=${UNTAGGED_COUNT}" >> "$GITHUB_OUTPUT"
           echo "::endgroup::"
 
-      # ── OPA governance policy ────────────────────────────────────────────────
+      #OPA governance policy 
       - name: Run governance policy
         id: governance
         run: |
@@ -229,39 +228,38 @@ jobs:
 
           # Deny violations
           DENY_RESULT=$(opa eval \
-            --data "$POLICY_FILE" \
-            --input "$COST_FILE" \
-            --format json \
-            'data.infracost.policies.governance.deny[]' 2>&1) || true
+          --data "$POLICY_FILE" \
+          --input "$COST_FILE" \
+          --format raw \
+          'count(data.infracost.policies.governance.deny)' 2>/dev/null || echo "0")
 
-          if [ -n "$DENY_RESULT" ] && [ "$DENY_RESULT" != "[]" ]; then
+          if [ "${DENY_RESULT:-0}" -gt 0 ] 2>/dev/null; then
             echo "Governance violations:"
-            echo "$DENY_RESULT" | python3 -c "
-          import json, sys
-          results = json.load(sys.stdin)
-          for r in results:
-              print(f'  • {r.get(\"msg\", r.get(\"message\", r))}')
-            " 2>/dev/null || echo "$DENY_RESULT"
-            VIOLATIONS=$(echo "$DENY_RESULT" | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo 1)
+            opa eval \
+              --data "$POLICY_FILE" \
+              --input "$COST_FILE" \
+              --format pretty \
+              'data.infracost.policies.governance.deny' 2>/dev/null || true
+            VIOLATIONS="${DENY_RESULT}"
           else
             echo "No governance violations"
           fi
+        
 
           # Warnings (non-blocking)
           WARN_RESULT=$(opa eval \
             --data "$POLICY_FILE" \
             --input "$COST_FILE" \
-            --format json \
-            'data.infracost.policies.governance.warn[]' 2>&1) || true
+            --format raw \
+            'count(data.infracost.policies.governance.warn)' 2>/dev/null || echo "0")
 
-          if [ -n "$WARN_RESULT" ] && [ "$WARN_RESULT" != "[]" ]; then
+          if [ "${WARN_RESULT:-0}" -gt 0 ] 2>/dev/null; then
             echo "Governance warnings:"
-            echo "$WARN_RESULT" | python3 -c "
-          import json, sys
-          results = json.load(sys.stdin)
-          for r in results:
-              print(f'  ⚠ {r.get(\"msg\", r.get(\"message\", r))}')
-            " 2>/dev/null || echo "$WARN_RESULT"
+            opa eval \
+              --data "$POLICY_FILE" \
+              --input "$COST_FILE" \
+              --format pretty \
+              'data.infracost.policies.governance.warn' 2>/dev/null || true
           fi
 
           echo "governance_violations=${VIOLATIONS}" >> "$GITHUB_OUTPUT"
