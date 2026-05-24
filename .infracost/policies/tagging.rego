@@ -2,7 +2,7 @@ package infracost.policies.tagging
 
 import rego.v1
 
-# ── Required tags ──────────────────────────────────────────────────────────────
+# Required tags
 required_tags := {
     "Environment",
     "Owner",
@@ -10,7 +10,7 @@ required_tags := {
     "CostCenter",
 }
 
-# ── Resources that must be tagged ─────────────────────────────────────────────
+# Resources that must be tagged
 taggable_resources := {
     "aws_instance",
     "aws_db_instance",
@@ -48,7 +48,7 @@ valid_environments := {
     "dev", "staging", "prod", "test",
 }
 
-# ── Helper functions ───────────────────────────────────────────────────────────
+# Helper functions
 
 get_resource_address(resource) := resource.address if { resource.address }
 get_resource_address(resource) := sprintf("%s.%s", [resource.type, resource.name]) if {
@@ -94,7 +94,7 @@ has_required_tags(resource) if {
     }
 }
 
-# ── DENY: Missing required tags — Infracost format ────────────────────────────
+# DENY: Missing required tags — Infracost format
 
 deny[msg] if {
     project := input.projects[_]
@@ -116,7 +116,7 @@ deny[msg] if {
     }
 }
 
-# ── DENY: Missing required tags — Terraform plan format ───────────────────────
+# DENY: Missing required tags — Terraform plan format
 
 deny[msg] if {
     resource := input.resource_changes[_]
@@ -137,7 +137,7 @@ deny[msg] if {
     }
 }
 
-# ── DENY: Empty tag values — Infracost format ─────────────────────────────────
+# DENY: Empty tag values — Infracost format
 
 deny[msg] if {
     project := input.projects[_]
@@ -158,7 +158,7 @@ deny[msg] if {
     }
 }
 
-# ── DENY: Empty tag values — Terraform plan format ────────────────────────────
+# DENY: Empty tag values — Terraform plan format
 
 deny[msg] if {
     resource := input.resource_changes[_]
@@ -178,7 +178,7 @@ deny[msg] if {
     }
 }
 
-# ── WARN: Non-standard Environment value — Infracost format ───────────────────
+# WARN: Non-standard Environment value — Infracost format
 
 warn[msg] if {
     project := input.projects[_]
@@ -200,7 +200,7 @@ warn[msg] if {
     }
 }
 
-# ── WARN: Non-standard Environment value — Terraform plan format ──────────────
+# WARN: Non-standard Environment value — Terraform plan format
 
 warn[msg] if {
     resource := input.resource_changes[_]
@@ -221,7 +221,7 @@ warn[msg] if {
     }
 }
 
-# ── WARN: Placeholder Owner values ────────────────────────────────────────────
+# WARN: Placeholder Owner values
 
 warn[msg] if {
     project := input.projects[_]
@@ -262,7 +262,7 @@ warn[msg] if {
     }
 }
 
-# ── WARN: CostCenter format must match CC-XXXX ────────────────────────────────
+# WARN: CostCenter format must match CC-XXXX
 
 warn[msg] if {
     project := input.projects[_]

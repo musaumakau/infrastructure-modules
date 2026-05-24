@@ -2,7 +2,7 @@ package infracost.policies.governance
 
 import rego.v1
 
-# ── Cost limits per resource type (monthly USD) ────────────────────────────────
+# Cost limits per resource type (monthly USD)
 cost_limits := {
     "aws_instance":              500,
     "aws_db_instance":          1000,
@@ -30,7 +30,7 @@ undersized_eks_types := {
     "t2.micro", "t2.small", "t3.micro", "t3.small",
 }
 
-# Helper functions 
+# Helper functions
 
 get_resource_address(resource) := resource.address if { resource.address }
 get_resource_address(resource) := sprintf("%s.%s", [resource.type, resource.name]) if {
@@ -56,7 +56,7 @@ get_resource_tags(resource) := {} if {
     not resource.change.after.tags
 }
 
-# ── COST: Deny resources exceeding monthly cost limits ────────────────────────
+# COST: Deny resources exceeding monthly cost limits
 
 deny[msg] if {
     project := input.projects[_]
@@ -77,7 +77,7 @@ deny[msg] if {
     }
 }
 
-# ── COST: Warn resources approaching cost limits (80%) ────────────────────────
+# COST: Warn resources approaching cost limits (80%)
 
 warn[msg] if {
     project := input.projects[_]
@@ -99,7 +99,7 @@ warn[msg] if {
     }
 }
 
-# ── COST: Warn total monthly cost across all projects exceeds budget ───────────
+# COST: Warn total monthly cost across all projects exceeds budget
 
 warn[msg] if {
     total := sum([cost |
@@ -115,7 +115,7 @@ warn[msg] if {
     }
 }
 
-# ── S3: Naming convention ──────────────────────────────────────────────────────
+# S3: Naming convention
 
 deny[msg] if {
     resource := input.resource_changes[_]
@@ -133,13 +133,12 @@ deny[msg] if {
     }
 }
 
-# ── S3: Public access block must exist ────────────────────────────────────────
+# S3: Public access block must exist
 
 deny[msg] if {
     resource := input.resource_changes[_]
     resource.type == "aws_s3_bucket"
 
-    # No public access block resource in the same plan
     public_access_blocks := [r |
         r := input.resource_changes[_]
         r.type == "aws_s3_bucket_public_access_block"
@@ -153,7 +152,7 @@ deny[msg] if {
     }
 }
 
-# ── EC2: Encrypted root EBS volume ────────────────────────────────────────────
+# EC2: Encrypted root EBS volume
 
 deny[msg] if {
     resource := input.resource_changes[_]
@@ -168,7 +167,7 @@ deny[msg] if {
     }
 }
 
-# ── EC2: Enforce IMDSv2 ───────────────────────────────────────────────────────
+# EC2: Enforce IMDSv2
 
 deny[msg] if {
     resource := input.resource_changes[_]
@@ -184,7 +183,7 @@ deny[msg] if {
     }
 }
 
-# ── EC2: No plaintext secrets in userdata ─────────────────────────────────────
+# EC2: No plaintext secrets in userdata
 
 deny[msg] if {
     resource := input.resource_changes[_]
@@ -206,7 +205,7 @@ deny[msg] if {
     }
 }
 
-# ── EC2: Warn large instance types ────────────────────────────────────────────
+# EC2: Warn large instance types
 
 warn[msg] if {
     resource := input.resource_changes[_]
@@ -224,7 +223,7 @@ warn[msg] if {
     }
 }
 
-# ── SECURITY GROUPS: No unrestricted SSH ──────────────────────────────────────
+# SECURITY GROUPS: No unrestricted SSH
 
 deny[msg] if {
     resource := input.resource_changes[_]
@@ -242,7 +241,7 @@ deny[msg] if {
     }
 }
 
-# ── SECURITY GROUPS: No unrestricted RDP ──────────────────────────────────────
+# SECURITY GROUPS: No unrestricted RDP
 
 deny[msg] if {
     resource := input.resource_changes[_]
@@ -260,7 +259,7 @@ deny[msg] if {
     }
 }
 
-# ── KMS: Key rotation must be enabled ─────────────────────────────────────────
+# KMS: Key rotation must be enabled
 
 deny[msg] if {
     resource := input.resource_changes[_]
@@ -274,7 +273,7 @@ deny[msg] if {
     }
 }
 
-# ── IAM: Warn wildcard principal in assume role policy ────────────────────────
+# IAM: Warn wildcard principal in assume role policy
 
 warn[msg] if {
     resource := input.resource_changes[_]
@@ -291,7 +290,7 @@ warn[msg] if {
     }
 }
 
-# ── RDS: Publicly accessible ──────────────────────────────────────────────────
+# RDS: Publicly accessible
 
 warn[msg] if {
     resource := input.resource_changes[_]
@@ -305,7 +304,7 @@ warn[msg] if {
     }
 }
 
-# ── RDS: Deletion protection ──────────────────────────────────────────────────
+# RDS: Deletion protection
 
 warn[msg] if {
     resource := input.resource_changes[_]
@@ -319,7 +318,7 @@ warn[msg] if {
     }
 }
 
-# ── EKS: Private endpoint must be enabled ─────────────────────────────────────
+# EKS: Private endpoint must be enabled
 
 deny[msg] if {
     resource := input.resource_changes[_]
@@ -333,7 +332,7 @@ deny[msg] if {
     }
 }
 
-# ── EKS: Warn public endpoint enabled ────────────────────────────────────────
+# EKS: Warn public endpoint enabled
 
 warn[msg] if {
     resource := input.resource_changes[_]
@@ -347,7 +346,7 @@ warn[msg] if {
     }
 }
 
-# ── EKS: Required log types ───────────────────────────────────────────────────
+# EKS: Required log types
 
 deny[msg] if {
     resource := input.resource_changes[_]
@@ -367,7 +366,7 @@ deny[msg] if {
     }
 }
 
-# ── EKS: Undersized node group instance types ─────────────────────────────────
+# EKS: Undersized node group instance types
 
 deny[msg] if {
     resource := input.resource_changes[_]
@@ -385,7 +384,7 @@ deny[msg] if {
     }
 }
 
-# ── EKS: Prod-sized instances in dev environment ──────────────────────────────
+# EKS: Prod-sized instances in dev environment
 
 warn[msg] if {
     resource := input.resource_changes[_]
@@ -405,7 +404,7 @@ warn[msg] if {
     }
 }
 
-# ── EKS: Protected tag on prod/staging clusters ───────────────────────────────
+# EKS: Protected tag on prod/staging clusters
 
 warn[msg] if {
     resource := input.resource_changes[_]
@@ -423,7 +422,7 @@ warn[msg] if {
     }
 }
 
-# ── VPC: Flow logs must exist ─────────────────────────────────────────────────
+# VPC: Flow logs must exist
 
 warn[msg] if {
     resource := input.resource_changes[_]
@@ -442,7 +441,7 @@ warn[msg] if {
     }
 }
 
-# ── SUBNET: Public IP auto-assign ─────────────────────────────────────────────
+# SUBNET: Public IP auto-assign
 
 warn[msg] if {
     resource := input.resource_changes[_]
@@ -456,7 +455,7 @@ warn[msg] if {
     }
 }
 
-#  HELM: Timeout guard 
+# HELM: Timeout guard
 
 warn[msg] if {
     resource := input.resource_changes[_]
