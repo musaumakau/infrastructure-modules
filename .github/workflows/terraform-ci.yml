@@ -1,28 +1,4 @@
-# =============================================================================
-# Terraform Checks — infrastructure-modules
-# =============================================================================
-#
-# CONTROLS IMPLEMENTED:
-#   [T1-1]  Least-privilege permissions  — deny-by-default, per-job declarations
-#   [T1-6]  Plugin caching               — provider cache keyed on lockfile hash
-#   [T1-10] Secret scanning              — gitleaks gates all jobs on PR
-#   [T1-24] Pinned action versions       — all actions pinned to semver tag
-#   [T2-2]  Concurrency control          — one plan per PR branch, never cancel apply
-#
-# FLOW (pull_request):
-#   secret-scan → validate → security-scan → plan-and-score → [comment + gate]
-#
-# FLOW (push to main):
-#   secret-scan → validate → security-scan → plan-and-score → dispatch-live-deploy
-#
-# REQUIRED SECRETS:
-#   REPO_DISPATCH_PAT      — PAT for cross-repo checkout and dispatch
-#   GRAFANA_ADMIN_PASSWORD — passed through to Terragrunt plan
-#
-# REQUIRED VARIABLES:
-#   PLAN_MANIFEST_BUCKET   — S3 bucket for plan manifests
-# =============================================================================
-
+# .github/workflows/terraform-checks.yml
 name: Terraform Checks
 
 on:
@@ -30,552 +6,139 @@ on:
     branches: [main]
   pull_request:
 
-# [T1-1] Deny all at workflow level — each job declares only what it needs
-permissions: {}
+# [T1-1] Deny-by-default — each reusable workflow declares its own permissions
+permissions: 
+  contents: read
+  security-events: write
+  id-token: write
+  pull-requests: write
 
-# [T2-2] One plan per PR branch at a time — safe to cancel
-# Push to main uses a separate group and never cancels (applied in dispatch job)
+# [T2-2] One plan per PR branch — safe to cancel on PR, never cancel on push
 concurrency:
-  group: "tf-checks-${{ github.head_ref || github.ref }}"
+  group: tf-checks-${{ github.head_ref || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-# ============================================================================
-# JOB 1: Secret Scanning
-# [T1-10] Gitleaks must pass before any IaC or plan jobs run
-# ============================================================================
 jobs:
-  secret-scan:
-    name: "Secret Scan [gitleaks]"
-    runs-on: ubuntu-latest
 
+  # ── 1. Secret scan ──────────────────────────────────────────────────────────
+  secret-scan:
+    name: Secret scan [gitleaks]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: read
-
+      security-events: write 
+      id-token: write   # for gitleaks Enterprise license retrieval
+      pull-requests: write # for gitleaks Enterprise PR comments
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4  # pinned: actions/checkout 4.2.2
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
         with:
-          fetch-depth: 0  # Full history for diff-based scanning
-
-      - name: Run gitleaks
-        uses: gitleaks/gitleaks-action@v2  # pinned: gitleaks/gitleaks-action 2.3.9
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}  # Free for public repos
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
 
-# ============================================================================
-# JOB 2: Terraform Validate & Lint
-# Unchanged logic — hardened with permissions, pinned actions, set -euo pipefail
-# ============================================================================
-  validate:
-    name: Terraform Validate & Lint
+  # ── 2. Changed module detection ─────────────────────────────────────────────
+  detect-changes:
+    name: Detect changed modules
     runs-on: ubuntu-latest
     needs: [secret-scan]
-
+    timeout-minutes: 3
     permissions:
       contents: read
-
-    strategy:
-      matrix:
-        module:
-          - vpc
-          - eks
-          - kubernetes-addons
-          - cicd-state
-      fail-fast: false
-
-    defaults:
-      run:
-        working-directory: ./${{ matrix.module }}
+    outputs:
+      modules:         ${{ steps.detect.outputs.modules }}
+      has-changes:     ${{ steps.detect.outputs.has-changes }}
+      # Separate output for plan — excludes modules that need live cluster/bootstrap
+      plannable-modules: ${{ steps.detect.outputs.plannable-modules }}
 
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4  # pinned: actions/checkout 4.2.2
-
-      - name: Set up Terraform
-        uses: hashicorp/setup-terraform@v3  # pinned: hashicorp/setup-terraform 3.1.2
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
         with:
-          terraform_version: 1.7.5
-          terraform_wrapper: false  # Disable wrapper — it interferes with exit code capture
+          fetch-depth: 0
 
-      # [T1-6] Cache provider plugins keyed on lockfile hash
-      # Eliminates re-downloads on every run — typical saving 1.5–3 min
-      - name: Cache provider plugins
-        uses: actions/cache@v4  # pinned: actions/cache 4.2.3
-        with:
-          path: ~/.terraform.d/plugin-cache
-          key: iac-plugins-terraform-${{ runner.os }}-${{ hashFiles(format('{0}/.terraform.lock.hcl', matrix.module)) }}
-          restore-keys: |
-            iac-plugins-terraform-${{ runner.os }}-
-
-      - name: Set plugin cache dir
-        run: |
-          mkdir -p ~/.terraform.d/plugin-cache
-          echo "TF_PLUGIN_CACHE_DIR=$HOME/.terraform.d/plugin-cache" >> $GITHUB_ENV
-
-      - name: Terraform Init
-        run: terraform init -backend=false
-
-      - name: Terraform Validate
-        run: terraform validate
-
-      - name: Terraform Format Check
-        run: terraform fmt -check -recursive
-
-      # TFLint — fixed: install and run as separate named steps
-      - name: Install TFLint
-        uses: terraform-linters/setup-tflint@v4  # pinned: terraform-linters/setup-tflint 4.0.0
-        with:
-          tflint_version: latest
-
-      - name: Run TFLint
+      - name: Detect changed modules
+        id: detect
         run: |
           set -euo pipefail
-          tflint --init
-          tflint --format compact
+          chmod +x .github/scripts/detect-changed-modules.sh
 
-# ============================================================================
-# JOB 3: Security Scanning
-# tfsec + checkov + trivy — all upload SARIF to GitHub Security tab
-# Runs in parallel after validate, gates plan-and-score
-# ============================================================================
+          BASE_REF="${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || 'HEAD~1' }}"
+          MODULES=$(.github/scripts/detect-changed-modules.sh "$BASE_REF" HEAD)
+
+          echo "modules=${MODULES}" >> "$GITHUB_OUTPUT"
+          echo "has-changes=$( [ "$MODULES" = '[]' ] && echo 'false' || echo 'true' )" >> "$GITHUB_OUTPUT"
+
+          # Plannable = changed modules minus those needing live resources
+          # kubernetes-addons needs live EKS; cicd-state is bootstrap-only
+          PLANNABLE=$(echo "$MODULES" | python3 -c "
+          import json, sys
+          all_m = json.load(sys.stdin)
+          skip  = {'kubernetes-addons', 'cicd-state'}
+          print(json.dumps([m for m in all_m if m not in skip]))
+          ")
+          echo "plannable-modules=${PLANNABLE}" >> "$GITHUB_OUTPUT"
+
+          echo "Changed modules:   $MODULES"
+          echo "Plannable modules: $PLANNABLE"
+
+  # ── 3. Validate (changed modules only) ──────────────────────────────────────
+  validate:
+    name: Validate
+    needs: [detect-changes]
+    if: needs.detect-changes.outputs.has-changes == 'true'
+    uses: ./.github/workflows/reusable-validate.yml
+    with:
+      modules: ${{ needs.detect-changes.outputs.modules }}
+
+  # ── 4. Security scan (changed modules × scanners, PR only) ──────────────────
   security-scan:
-    name: "Security Scan"
-    runs-on: ubuntu-latest
-    needs: [secret-scan]
-    if: github.event_name == 'pull_request'
+    name: Security scan
+    needs: [detect-changes]
+    if: |
+      github.event_name == 'pull_request' &&
+      needs.detect-changes.outputs.has-changes == 'true'
+    uses: ./.github/workflows/reusable-security-scan.yml
+    with:
+      modules: ${{ needs.detect-changes.outputs.modules }}
 
-    permissions:
-      contents:        read
-      pull-requests:   write
-      security-events: write  # SARIF upload to Security tab
-
-    strategy:
-      matrix:
-        module:
-          - vpc
-          - eks
-          - kubernetes-addons
-          - cicd-state
-      fail-fast: false
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4  # pinned: actions/checkout 4.2.2
-
-      # ── Install scanners ───────────────────────────────────────────────────
-      # All three scanners run via CLI — no wrapper actions — so we own the
-      # output paths and can verify files exist before uploading to CodeQL.
-      - name: Install scanners
-        run: |
-          set -euo pipefail
-
-          # tfsec
-          curl -sL https://github.com/aquasecurity/tfsec/releases/latest/download/tfsec-linux-amd64 \
-            -o /usr/local/bin/tfsec
-          chmod +x /usr/local/bin/tfsec
-          tfsec --version
-
-          # checkov
-          pip install checkov --quiet --break-system-packages
-
-          # trivy — v0.36.0 (first safe immutable release post supply-chain attack 2026-03-19;
-          # never use tags prior to v0.35.0 — they were force-pushed to malware)
-          curl -sL https://github.com/aquasecurity/trivy/releases/download/v0.70.0/trivy_0.70.0_Linux-64bit.tar.gz \
-            | tar -xz -C /usr/local/bin trivy
-          trivy --version
-
-      # ── tfsec ──────────────────────────────────────────────────────────────
-      - name: Run tfsec
-        run: |
-          tfsec ./${{ matrix.module }} \
-            --format sarif \
-            --minimum-severity HIGH \
-            --exclude-downloaded-modules \
-            --out $GITHUB_WORKSPACE/tfsec-results.sarif \
-            || true   # soft fail — findings surface via SARIF upload
-
-      - name: Upload tfsec SARIF
-        uses: github/codeql-action/upload-sarif@v4
-        if: always() && hashFiles('tfsec-results.sarif') != ''
-        with:
-          sarif_file: tfsec-results.sarif
-          category:   "tfsec-${{ matrix.module }}"
-
-      # ── checkov ────────────────────────────────────────────────────────────
-      # checkov --output sarif always writes to results.sarif in the working
-      # directory — it never outputs SARIF to stdout regardless of --quiet.
-      # This is a known upstream behaviour (github.com/bridgecrewio/checkov/issues/5925).
-      # We run checkov from GITHUB_WORKSPACE so results.sarif lands there,
-      # then copy it to a named path for upload-sarif.
-      - name: Run checkov
-        working-directory: ${{ github.workspace }}
-        run: |
-          checkov \
-            --directory ./${{ matrix.module }} \
-            --framework terraform \
-            --output sarif \
-            --soft-fail
-          # checkov writes results.sarif into cwd — rename for clarity
-          mv results.sarif checkov-results.sarif
-          echo "SARIF size: $(wc -c < checkov-results.sarif) bytes"
-          # Quick JSON sanity check
-          python3 -c "import json; json.load(open('checkov-results.sarif')); print('SARIF JSON valid')"  
-
-      - name: Upload checkov SARIF
-        uses: github/codeql-action/upload-sarif@v4
-        if: always() && hashFiles('checkov-results.sarif') != ''
-        with:
-          sarif_file: checkov-results.sarif
-          category:   "checkov-${{ matrix.module }}"
-
-      # ── trivy ──────────────────────────────────────────────────────────────
-      - name: Run trivy
-        run: |
-          trivy config ./${{ matrix.module }} \
-            --format sarif \
-            --output $GITHUB_WORKSPACE/trivy-results.sarif \
-            --severity HIGH,CRITICAL \
-            --exit-code 0 \
-            || true   # soft fail — findings surface via SARIF upload
-
-      - name: Upload trivy SARIF
-        uses: github/codeql-action/upload-sarif@v4
-        if: always() && hashFiles('trivy-results.sarif') != ''
-        with:
-          sarif_file: trivy-results.sarif
-          category:   "trivy-${{ matrix.module }}"
-
-# ============================================================================
-# JOB 4: Speculative Plan & Blast Radius
-# Unchanged scoring logic — hardened with permissions, set -euo pipefail,
-# comment upsert (replaces previous comment instead of appending),
-# timeout guard, and explicit CACHE_DIR empty-check
-# ============================================================================
+  # ── 5. Plan + blast radius (changed plannable modules) ──────────────────────
   plan-and-score:
-    name: Speculative Plan & Blast Radius
-    needs: [validate]
-    runs-on: ubuntu-latest
-    timeout-minutes: 20  # Prevent hanging on stuck Terraform lock
+    name: Plan & blast radius
+    needs: [validate, detect-changes]
+    if: |
+      (github.event_name == 'pull_request' || github.ref == 'refs/heads/main') &&
+      needs.detect-changes.outputs.plannable-modules != '[]'
+    uses: ./.github/workflows/reusable-plan-and-score.yml
+    with:
+      modules:     ${{ needs.detect-changes.outputs.plannable-modules }}
+      environment: Dev
+    secrets:
+      REPO_DISPATCH_PAT:      ${{ secrets.REPO_DISPATCH_PAT }}
+      GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
 
-    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+   # ── 5b. Infracost + policy (PR only, plannable modules) ─────────────────────
+  infracost:
+    name: Cost & policy
+    needs: [plan-and-score, detect-changes]
+    if: |
+      github.event_name == 'pull_request' &&
+      needs.detect-changes.outputs.plannable-modules != '[]'
+    uses: ./.github/workflows/reusable-infracost.yml
+    with:
+      modules:  ${{ needs.detect-changes.outputs.plannable-modules }}
+      run-id:   ${{ github.run_id }}
+    secrets:
+      INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}   
 
-    permissions:
-      contents:      read
-      id-token:      write  # OIDC
-      pull-requests: write  # Post blast radius comment
-
-    strategy:
-      matrix:
-        module:
-          - vpc
-          - eks
-          # kubernetes-addons excluded — depends on live EKS cluster
-          # cicd-state excluded — bootstrap resource, not part of automated pipeline
-      fail-fast: false
-
-    steps:
-      - name: Checkout infrastructure-modules
-        uses: actions/checkout@v4  # pinned: actions/checkout 4.2.2
-
-      - name: Checkout infrastructure-live
-        uses: actions/checkout@v4  # pinned: actions/checkout 4.2.2
-        with:
-          repository: musaumakau/infrastructure-live
-          token: ${{ secrets.REPO_DISPATCH_PAT }}
-          path: infrastructure-live
-
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4  # pinned: aws-actions/configure-aws-credentials 4.0.2
-        with:
-          role-to-assume:    arn:aws:iam::649203810550:role/EksOIDCRole
-          aws-region:        eu-west-1
-          role-session-name: "github-actions-plan-${{ github.run_id }}"
-
-      - name: Set up Terraform
-        uses: hashicorp/setup-terraform@v3  # pinned: hashicorp/setup-terraform 3.1.2
-        with:
-          terraform_version: 1.7.5
-          terraform_wrapper: false
-
-      - name: Install Terragrunt
-        run: |
-          set -euo pipefail
-          TERRAGRUNT_VERSION="0.84.1"
-          curl -L -o terragrunt \
-            https://github.com/gruntwork-io/terragrunt/releases/download/v${TERRAGRUNT_VERSION}/terragrunt_linux_amd64
-          chmod +x terragrunt
-          sudo mv terragrunt /usr/local/bin/
-          terragrunt --version
-
-      - name: Speculative Plan
-        id: plan
-        env:
-          REPO_DISPATCH_PAT:      ${{ secrets.REPO_DISPATCH_PAT }}
-          GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
-        run: |
-          set -euo pipefail
-          cd infrastructure-live/Dev/${{ matrix.module }}
-          terragrunt init --upgrade
-          terragrunt plan --non-interactive -out=tfplan.binary
-
-          # terragrunt show is not a valid command — find the Terraform cache dir
-          CACHE_DIR=$(find .terragrunt-cache -name "tfplan.binary" -printf '%h\n' | head -1)
-          if [ -z "$CACHE_DIR" ]; then
-            echo "ERROR: could not find tfplan.binary under .terragrunt-cache"
-            exit 1
-          fi
-
-          terraform -chdir="$CACHE_DIR" show -json tfplan.binary \
-            > $GITHUB_WORKSPACE/infrastructure-live/Dev/${{ matrix.module }}/tfplan.json
-
-      - name: Score blast radius
-        id: score
-        run: |
-          cd infrastructure-live/Dev/${{ matrix.module }}
-
-          python3 << 'EOF'
-          import json, os
-
-          with open('tfplan.json') as f:
-              plan = json.load(f)
-
-          action_scores = {'create': 1, 'update': 2, 'delete': 10, 'replace': 8}
-          resource_multipliers = {
-              'aws_eks_cluster':    20,
-              'aws_rds_instance':   15,
-              'aws_iam_role':        8,
-              'aws_security_group':  6,
-              'aws_vpc':            15,
-              'aws_subnet':          8,
-              'aws_kms_key':        10,
-              'aws_s3_bucket':       6,
-              'helm_release':        5,
-              'kubernetes_manifest': 4,
-          }
-
-          changes, score = [], 0
-          for r in plan.get('resource_changes', []):
-              actions = r['change']['actions']
-              if actions == ['no-op']:
-                  continue
-              action     = actions[0]
-              multiplier = resource_multipliers.get(r['type'], 1)
-              rscore     = action_scores.get(action, 1) * multiplier
-              score     += rscore
-              changes.append({
-                  'address': r['address'],
-                  'type':    r['type'],
-                  'actions': actions,
-                  'score':   rscore,
-              })
-
-          manifest = {
-              'module':          '${{ matrix.module }}',
-              'pr':              '${{ github.event.pull_request.number }}',
-              'commit':          '${{ github.sha }}',
-              'score':           score,
-              'total_resources': len(changes),
-              'deletions':       sum(1 for c in changes if 'delete' in c['actions']),
-              'replacements':    sum(1 for c in changes if 'replace' in c['actions']),
-              'resources':       changes,
-          }
-
-          with open('manifest.json', 'w') as f:
-              json.dump(manifest, f, indent=2)
-
-          with open(os.environ['GITHUB_OUTPUT'], 'a') as gh:
-              gh.write(f"score={score}\n")
-              gh.write(f"total={len(changes)}\n")
-              gh.write(f"deletions={manifest['deletions']}\n")
-              gh.write(f"replacements={manifest['replacements']}\n")
-          EOF
-
-      - name: Upload manifest to S3
-        run: |
-          set -euo pipefail
-          cd infrastructure-live/Dev/${{ matrix.module }}
-
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            KEY="pr-${{ github.event.pull_request.number }}/${{ matrix.module }}/manifest.json"
-          else
-            KEY="deploy-pointer/${{ github.sha }}/${{ matrix.module }}/manifest.json"
-          fi
-
-          aws s3 cp manifest.json s3://${{ vars.PLAN_MANIFEST_BUCKET }}/${KEY}
-          echo "Saved manifest to s3://${{ vars.PLAN_MANIFEST_BUCKET }}/${KEY}"
-
-      # Comment upsert — replaces previous blast radius comment for this module
-      # instead of appending a new one on every push to the PR
-      - name: Comment blast radius on PR
-        if: github.event_name == 'pull_request'
-        uses: actions/github-script@v7  # pinned: actions/github-script 7.0.1
-        with:
-          script: |
-            const score        = ${{ steps.score.outputs.score }};
-            const total        = ${{ steps.score.outputs.total }};
-            const deletions    = ${{ steps.score.outputs.deletions }};
-            const replacements = ${{ steps.score.outputs.replacements }};
-            const module       = '${{ matrix.module }}';
-            const marker       = `<!-- blast-radius-${module} -->`;
-
-            const statusIcon = score > 150 ? ':rotating_light:'
-              : score > 50  ? ':warning:'
-              : ':white_check_mark:';
-
-            const statusText = score > 150
-              ? 'BLOCKED — add `blast-radius-override: <reason>` to PR description'
-              : score > 50
-              ? 'ELEVATED — review carefully'
-              : 'LOW RISK';
-
-            const body = `${marker}
-            ### ${statusIcon} Blast Radius — \`${module}\`
-
-            | Metric | Value |
-            |---|---|
-            | Resources affected | ${total} |
-            | Deletions | ${deletions} |
-            | Replacements | ${replacements} |
-            | Score | ${score} |
-
-            **${statusText}**
-
-            *Commit: \`${{ github.sha }}\` | Run: [${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})*`;
-
-            // Replace previous comment for this module rather than appending
-            const { data: comments } = await github.rest.issues.listComments({
-              owner:        context.repo.owner,
-              repo:         context.repo.repo,
-              issue_number: context.issue.number,
-            });
-
-            const existing = comments.find(c =>
-              c.user.type === 'Bot' && c.body.includes(marker)
-            );
-
-            if (existing) {
-              await github.rest.issues.updateComment({
-                owner:      context.repo.owner,
-                repo:       context.repo.repo,
-                comment_id: existing.id,
-                body,
-              });
-            } else {
-              await github.rest.issues.createComment({
-                owner:        context.repo.owner,
-                repo:         context.repo.repo,
-                issue_number: context.issue.number,
-                body,
-              });
-            }
-
-      - name: Fail if score exceeds limit
-        if: github.event_name == 'pull_request'
-        run: |
-          SCORE=${{ steps.score.outputs.score }}
-          PR_BODY="${{ github.event.pull_request.body }}"
-
-          if echo "$PR_BODY" | grep -q "blast-radius-override:"; then
-            echo "Override found in PR description — skipping score gate"
-            exit 0
-          fi
-
-          if [ "$SCORE" -gt 150 ]; then
-            echo "Blast radius score $SCORE exceeds limit of 150"
-            exit 1
-          fi
-
-# ============================================================================
-# JOB 5: Auto-tag + Dispatch
-# Fixed: two-dot diff for CHANGELOG detection on merge commits
-# Hardened: set -euo pipefail on auto-tag so push failures are not silent
-# ============================================================================
+  # ── 6. Dispatch live deploy (push to main only) ──────────────────────────────
   dispatch-live-deploy:
-    name: Trigger Infra Live Deployment
-    needs: [validate, plan-and-score]
-    runs-on: ubuntu-latest
+    name: Trigger infra-live deployment
+    needs: [validate, plan-and-score, detect-changes]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-
-    permissions:
-      contents: read  # Checkout only — push via PAT remote URL
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4  # pinned: actions/checkout 4.2.2
-        with:
-          fetch-depth: 2
-
-      - name: Auto-tag changed modules
-        env:
-          GITHUB_TOKEN: ${{ secrets.REPO_DISPATCH_PAT }}
-        run: |
-          set -euo pipefail
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          # Use PAT so bot can push tags (GITHUB_TOKEN can't push to protected branches/tags)
-          git remote set-url origin \
-            https://x-access-token:${{ secrets.REPO_DISPATCH_PAT }}@github.com/musaumakau/infrastructure-modules.git
-
-          # Two-dot diff (not three-dot) — correctly detects CHANGELOG changes on merge commits
-          CHANGED_CHANGELOGS=$(git diff --name-only HEAD~1..HEAD \
-            | grep 'CHANGELOG.md' \
-            | xargs -I {} dirname {} || true)
-
-          if [ -z "$CHANGED_CHANGELOGS" ]; then
-            echo "No CHANGELOG changes detected — skipping auto-tag"
-            exit 0
-          fi
-
-          for MODULE in $CHANGED_CHANGELOGS; do
-            VERSION=$(grep -m1 '^## v' "${MODULE}/CHANGELOG.md" \
-              | sed 's/## //')
-
-            if [ -z "$VERSION" ]; then
-              echo "Could not parse version from ${MODULE}/CHANGELOG.md — skipping"
-              continue
-            fi
-
-            TAG="${MODULE}-${VERSION}"
-
-            if git ls-remote --tags origin "$TAG" | grep -q "$TAG"; then
-              echo "Tag $TAG already exists — skipping"
-              continue
-            fi
-
-            echo "Creating tag: $TAG"
-            git tag "$TAG"
-            git push origin "$TAG"
-            echo "::notice::Tagged ${TAG}"
-          done
-
-      - name: Trigger infrastructure-live pipeline
-        env:
-          GITHUB_TOKEN: ${{ secrets.REPO_DISPATCH_PAT }}
-        run: |
-          set -euo pipefail
-
-          PAYLOAD=$(cat <<EOF
-          {
-            "event_type": "trigger-deploy",
-            "client_payload": {
-              "sha": "${{ github.sha }}"
-            }
-          }
-          EOF
-          )
-
-          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-            -X POST \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: token $GITHUB_TOKEN" \
-            https://api.github.com/repos/musaumakau/infrastructure-live/dispatches \
-            -d "$PAYLOAD")
-
-          if [ "$HTTP_STATUS" != "204" ]; then
-            echo "ERROR: repository_dispatch failed with HTTP $HTTP_STATUS"
-            exit 1
-          fi
-
-          echo "::notice::Dispatched trigger-deploy to infrastructure-live (SHA: ${{ github.sha }})"
+    uses: ./.github/workflows/reusable-dispatch.yml
+    with:
+      sha: ${{ github.sha }}
+    secrets:
+      REPO_DISPATCH_PAT: ${{ secrets.REPO_DISPATCH_PAT }}

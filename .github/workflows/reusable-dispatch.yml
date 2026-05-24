@@ -1,0 +1,98 @@
+# .github/workflows/reusable/dispatch.yml
+name: Reusable — Auto-tag & Dispatch
+
+on:
+  workflow_call:
+    inputs:
+      sha:
+        description: 'Commit SHA to dispatch to infrastructure-live'
+        type: string
+        required: true
+      repository:
+        description: 'Target repository for dispatch (org/repo)'
+        type: string
+        required: false
+        default: 'musaumakau/infrastructure-live'
+      event-type:
+        description: 'repository_dispatch event_type'
+        type: string
+        required: false
+        default: 'trigger-deploy'
+    secrets:
+      REPO_DISPATCH_PAT:
+        required: true
+
+permissions: {}
+
+jobs:
+  dispatch:
+    name: Auto-tag & trigger infra-live
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    permissions:
+      contents: read  # Checkout only — push via PAT remote URL
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          fetch-depth: 2
+
+      - name: Auto-tag changed modules
+        env:
+          GITHUB_TOKEN: ${{ secrets.REPO_DISPATCH_PAT }}
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git remote set-url origin \
+            "https://x-access-token:${GITHUB_TOKEN}@github.com/musaumakau/infrastructure-modules.git"
+
+          CHANGED_CHANGELOGS=$(git diff --name-only HEAD~1..HEAD \
+            | grep 'CHANGELOG.md' | xargs -I {} dirname {} || true)
+
+          if [ -z "$CHANGED_CHANGELOGS" ]; then
+            echo "No CHANGELOG changes detected — skipping auto-tag"
+          else
+            for MODULE in $CHANGED_CHANGELOGS; do
+              VERSION=$(grep -m1 '^## v' "${MODULE}/CHANGELOG.md" | sed 's/## //')
+
+              if [ -z "$VERSION" ]; then
+                echo "No version found in ${MODULE}/CHANGELOG.md — skipping"
+                continue
+              fi
+
+              TAG="${MODULE}-${VERSION}"
+
+              if git ls-remote --tags origin "$TAG" | grep -q "$TAG"; then
+                echo "Tag $TAG already exists — skipping"
+                continue
+              fi
+
+              echo "Tagging: $TAG"
+              git tag "$TAG" && git push origin "$TAG"
+              echo "::notice::Tagged ${TAG}"
+            done
+          fi
+
+      - name: Trigger infrastructure-live
+        env:
+          GITHUB_TOKEN: ${{ secrets.REPO_DISPATCH_PAT }}
+        run: |
+          set -euo pipefail
+
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: token ${GITHUB_TOKEN}" \
+            "https://api.github.com/repos/${{ inputs.repository }}/dispatches" \
+            -d "{\"event_type\":\"${{ inputs.event-type }}\",\"client_payload\":{\"sha\":\"${{ inputs.sha }}\"}}")
+
+          if [ "$HTTP_STATUS" != "204" ]; then
+            echo "::error::repository_dispatch failed with HTTP ${HTTP_STATUS}"
+            exit 1
+          fi
+
+          echo "::notice::Dispatched ${{ inputs.event-type }} → ${{ inputs.repository }} (${{ inputs.sha }})"
