@@ -17,10 +17,10 @@ public_subnet_tags = {
   "kubernetes.io/role/elb" = "1"
 }
 
-# ---------------------------------------------------------------------------
+
 # Required tags — validated by modules/tags
-# ---------------------------------------------------------------------------
+
 project     = "infrastructure-modules"
 environment = "dev"
 owner       = "engineering"
-cost_center = "engineering"
+cost_center = "CC-0000"
