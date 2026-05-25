@@ -1,31 +1,26 @@
 # Mock values for CI/CD
-env = "ci-mock"
+env    = "ci-mock"
+region = "eu-west-1"
+
 vpc_cidr_block = "10.0.0.0/16"
-azs = ["eu-west-1a", "eu-west-1b", "eu-west-1c"]
+azs            = ["eu-west-1a", "eu-west-1b", "eu-west-1c"]
 
 private_subnet_cidrs = ["10.0.1.0/24", "10.0.2.0/24", "10.0.3.0/24"]
-public_subnet_cidrs = ["10.0.101.0/24", "10.0.102.0/24", "10.0.103.0/24"]
+public_subnet_cidrs  = ["10.0.101.0/24", "10.0.102.0/24", "10.0.103.0/24"]
 
+# EKS discovery labels — these are additive, not replacements for governance tags
 private_subnet_tags = {
-  Environment = "ci-mock"
-  Owner       = "platform-team"
-  Project     = "infrastructure"
-  CostCenter  = "engineering"
-  Type        = "PrivateSubnet"
+  "kubernetes.io/role/internal-elb" = "1"
 }
 
 public_subnet_tags = {
-  Environment = "ci-mock"
-  Owner       = "platform-team"
-  Project     = "infrastructure"
-  CostCenter  = "engineering"
-  Type        = "PublicSubnet"
+  "kubernetes.io/role/elb" = "1"
 }
 
-# Required tags for policy compliance
-common_tags = {
-  Environment = "ci-mock"
-  Owner       = "platform-team"
-  Project     = "infrastructure"
-  CostCenter  = "engineering"
-}
+# ---------------------------------------------------------------------------
+# Required tags — validated by modules/tags
+# ---------------------------------------------------------------------------
+project     = "infrastructure-modules"
+environment = "dev"
+owner       = "engineering"
+cost_center = "engineering"

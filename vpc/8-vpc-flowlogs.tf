@@ -39,7 +39,7 @@ resource "aws_kms_key" "cloudwatch_logs" {
     ]
   })
 
-  tags = merge(var.common_tags, {
+  tags = merge(module.tags.tags, {
     Name = "${var.env}-cloudwatch-logs-key"
     Type = "KMSKey"
   })
@@ -53,10 +53,10 @@ resource "aws_kms_alias" "cloudwatch_logs" {
 # CloudWatch Log Group with proper retention and encryption
 resource "aws_cloudwatch_log_group" "vpc_flow_log" {
   name              = "/aws/vpc/flowlogs"
-  retention_in_days = 365 # 1 year retention
+  retention_in_days = 365
   kms_key_id        = aws_kms_key.cloudwatch_logs.arn
 
-  tags = merge(var.common_tags, {
+  tags = merge(module.tags.tags, {
     Name = "${var.env}-vpc-flow-logs"
     Type = "LogGroup"
   })
@@ -69,8 +69,9 @@ resource "aws_flow_log" "vpc_flow_log" {
   traffic_type    = "ALL"
   vpc_id          = aws_vpc.this.id
 
-  tags = merge(var.common_tags, {
+  tags = merge(module.tags.tags, {
     Name = "${var.env}-vpc-flow-log"
+    Type = "FlowLog"
   })
 }
 
@@ -91,7 +92,7 @@ resource "aws_iam_role" "flow_log_role" {
     ]
   })
 
-  tags = merge(var.common_tags, {
+  tags = merge(module.tags.tags, {
     Name = "${var.env}-flow-log-role"
     Type = "IAMRole"
   })
