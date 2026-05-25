@@ -8,7 +8,7 @@ common_tags = {
   Environment = "ci-mock"
   Owner       = "platform-team"
   Project     = "infrastructure"
-  CostCenter  = "engineering"
+  CostCenter  = "CC-0000"
 }
 
 node_groups = {
