@@ -130,6 +130,34 @@ jobs:
           echo "summary=${SUMMARY}" >> "$GITHUB_OUTPUT"
           echo "::endgroup::"
 
+
+
+      - name: Block on large cost increases
+        run: |
+          set -euo pipefail
+          python3 -c "
+          import json, sys
+
+          with open('/tmp/infracost-diff-${{ matrix.module }}.json') as f:
+              data = json.load(f)
+
+          diff = float(data.get('diffTotalMonthlyCost') or 0)
+          total = float(data.get('totalMonthlyCost') or 0)
+
+          # Block if monthly cost increases by more than \$500 or 50%
+          if diff > 500:
+              print(f'::error::Monthly cost increase \${diff:.2f} exceeds \$500 threshold')
+              sys.exit(1)
+
+          if total > 0:
+              baseline = total - diff
+              if baseline > 0 and (diff / baseline) > 0.5:
+                  print(f'::error::Cost increase {(diff/baseline)*100:.0f}% exceeds 50% threshold')
+                  sys.exit(1)
+
+          print(f'Cost increase \${diff:.2f}/month within acceptable range')
+          "
+
       # ── OPA tagging policy ───────────────────────────────────────────────────
       - name: Run tagging policy
         id: tagging
@@ -319,7 +347,6 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Merge all module diffs into one comment
           DIFF_FILES=$(ls cost-diffs/infracost-diff-*.json 2>/dev/null || true)
 
           if [ -z "$DIFF_FILES" ]; then
@@ -327,7 +354,6 @@ jobs:
             exit 0
           fi
 
-          # infracost comment supports multiple --path flags for merged output
           PATH_ARGS=""
           for f in $DIFF_FILES; do
             PATH_ARGS="$PATH_ARGS --path $f"
@@ -338,6 +364,8 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --github-token "${{ github.token }}" \
             --pull-request "${{ github.event.pull_request.number }}" \
-            --behavior update
+            --behavior update \
+            --show-skipped
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          INFRACOST_ENABLE_CLOUD: true
