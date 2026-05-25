@@ -1,0 +1,20 @@
+# Mock/example values for CI/CD and local testing
+
+project_name = "ci-mock"
+
+kms_deletion_window_days = 7
+
+manifest_retention_days = 90
+
+noncurrent_version_retention_days = 30
+
+# Example GitHub Actions / OIDC role ARN
+oidc_role_arn = "arn:aws:iam::123456789012:role/github-actions-oidc-role"
+
+# Common tags applied to all resources
+tags = {
+  Environment = "ci-mock"
+  Owner       = "platform-team"
+  Project     = "terraform-plan-manifests"
+  CostCenter  = "CC-0000"
+}
