@@ -1,26 +1,10 @@
-# =============================================================================
-# MODULE: cicd-state
-# =============================================================================
-# Creates the shared S3 bucket used to store Terraform plan manifests between
-# the plan pipeline (writes) and the deploy pipeline (reads).
-#
-# Also creates two IAM policies — one for each pipeline role:
-#   plan-role   — needs to write manifests and deploy pointers to S3
-#   deploy-role — needs to read manifests and deploy pointers from S3
-#
-# The roles themselves are managed separately. Attach the policy ARNs
-# from the outputs of this module to your existing OIDC roles.
-#
-# Object layout inside the bucket:
-#   pr-<number>/commit-<sha>/manifest.json   — plan manifest written on PR
-#   deploy-pointer/<sha>.json                — pointer written on merge
-# =============================================================================
+
 
 data "aws_caller_identity" "current" {}
 
-# -----------------------------------------------------------------------------
+
 # KMS — encrypts all objects in the bucket
-# -----------------------------------------------------------------------------
+
 
 resource "aws_kms_key" "plan_manifests" {
   description             = "${var.project_name} plan manifest encryption key"
@@ -37,7 +21,6 @@ resource "aws_kms_alias" "plan_manifests" {
   target_key_id = aws_kms_key.plan_manifests.key_id
 }
 
-# -----------------------------------------------------------------------------
 # KMS key policy
 # Root account retains full administrative access over this key.
 # OIDC role is granted encrypt/decrypt only — no key administration.
@@ -48,7 +31,7 @@ resource "aws_kms_alias" "plan_manifests" {
 # CKV_AWS_109 and CKV_AWS_356. Resources reference the key ARN directly
 # instead of "*" for the same reason — AWS scopes key policies to the key
 # implicitly but checkov requires an explicit ARN.
-# -----------------------------------------------------------------------------
+
 
 data "aws_iam_policy_document" "plan_manifests_key_policy" {
   statement {
@@ -103,9 +86,9 @@ resource "aws_kms_key_policy" "plan_manifests" {
   policy = data.aws_iam_policy_document.plan_manifests_key_policy.json
 }
 
-# -----------------------------------------------------------------------------
+
 # S3 bucket
-# -----------------------------------------------------------------------------
+
 
 resource "aws_s3_bucket" "plan_manifests" {
   bucket = "${var.project_name}-terraform-plan-manifests"
@@ -168,12 +151,12 @@ resource "aws_s3_bucket_public_access_block" "plan_manifests" {
   restrict_public_buckets = true
 }
 
-# -----------------------------------------------------------------------------
+
 # IAM policy — plan pipeline role (write access)
 # Scoped to the two key prefixes it needs to write:
 #   pr-*            manifest files
 #   deploy-pointer  SHA pointer files written on merge
-# -----------------------------------------------------------------------------
+
 
 data "aws_iam_policy_document" "plan_role" {
   statement {
@@ -212,11 +195,11 @@ resource "aws_iam_policy" "plan_role" {
   tags = var.tags
 }
 
-# -----------------------------------------------------------------------------
+
 # IAM policy — deploy pipeline role (read access)
 # Read-only across the entire bucket — it needs to fetch both the pointer
 # and the manifest it points to, without knowing the prefix in advance.
-# -----------------------------------------------------------------------------
+
 
 data "aws_iam_policy_document" "deploy_role" {
   statement {
