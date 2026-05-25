@@ -4,16 +4,28 @@ version: 0.1
 projects:
   - path: eks/
     name: "EKS Cluster"
+    terraform_var_files:
+      - terraform.tfvars.example
     # Optional: Add terraform variables if needed
     # terraform_var_files:
     #   - terraform.tfvars
     
   - path: vpc/
     name: "VPC Infrastructure"
+    terraform_var_files:
+      - terraform.tfvars.example
     
   - path: kubernetes-addons/
     name: "Kubernetes Add-ons"
+    terraform_var_files:
+      - terraform.tfvars.example
 
+  - path: cicd-state/
+    name: "CI/CD State"
+    terraform_var_files:
+      - terraform.tfvars.example
+
+    usage_file: ../.infracost/usage.yml  
 
 policies:
   - path: policies/
