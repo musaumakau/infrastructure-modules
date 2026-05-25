@@ -6,6 +6,7 @@ on:
       - 'eks/**'
       - 'vpc/**'
       - 'kubernetes-addons/**'
+      - 'cicd-state/**'
 
 jobs:
   infracost:
