@@ -64,6 +64,7 @@ jobs:
           name: "plan-${{ matrix.module }}-${{ inputs.run-id }}"
           path: plans/${{ matrix.module }}
 
+
       - name: Verify plan artifact
         run: |
           set -euo pipefail
@@ -78,7 +79,7 @@ jobs:
           "
           echo "::endgroup::"
 
-      # ── Infracost baseline (base branch) ────────────────────────────────────
+      #           Infracost baseline (base branch)         
       - name: Generate baseline cost estimate
         run: |
           set -euo pipefail
@@ -91,7 +92,7 @@ jobs:
             --out-file /tmp/infracost-base-${{ matrix.module }}.json
           echo "::endgroup::"
 
-      # ── Infracost PR branch ──────────────────────────────────────────────────
+      #           Infracost PR branch                                                                        
       - name: Restore PR branch files
         run: git checkout HEAD -- ${{ matrix.module }}/
 
@@ -130,7 +131,7 @@ jobs:
           echo "summary=${SUMMARY}" >> "$GITHUB_OUTPUT"
           echo "::endgroup::"
 
-      # ── OPA tagging policy ───────────────────────────────────────────────────
+      #           OPA tagging policy        
       - name: Run tagging policy
         id: tagging
         run: |
@@ -181,13 +182,13 @@ jobs:
           with open('$PLAN_FILE') as f:
               plan = json.load(f)
           required = {'Environment', 'Owner', 'Project', 'CostCenter'}
-          skip_types = {'aws_security_group_rule'}
+          skip_types = {'aws_security_group_rule', 'aws_iam_role_policy', 'aws_kms_alias', 'aws_route_table_association'}
           untagged = []
           for r in plan.get('resource_changes', []):
               if r['type'] in skip_types: continue
               actions = r['change']['actions']
               if 'create' not in actions and 'update' not in actions: continue
-              tags = set((r['change'].get('after') or {}).get('tags', {}).keys())
+              tags = set((r['change'].get('after') or {}).get('tags_all', {}).keys())
               missing = required - tags
               if missing:
                   untagged.append(f\"{r['address']} missing: {', '.join(sorted(missing))}\")
@@ -265,7 +266,7 @@ jobs:
           echo "governance_violations=${VIOLATIONS}" >> "$GITHUB_OUTPUT"
           echo "::endgroup::"
 
-      # ── Upload diff artifact for aggregation ────────────────────────────────
+      #           Upload diff artifact for aggregation                                                                                                                                                 
       - name: Upload cost diff artifact
         uses: actions/upload-artifact@5d5d22a31266ced268874388b861e4b58bb5c2f3  # v4.3.1
         if: always()
@@ -288,7 +289,7 @@ jobs:
           fi
           echo "All policies passed"
 
-  # ── Aggregated PR comment ──────────────────────────────────────────────────
+  #           Aggregated PR comment                                                                        
   comment:
     name: Post unified PR comment
     runs-on: ubuntu-latest

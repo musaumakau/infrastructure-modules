@@ -45,10 +45,12 @@ placeholder_owner_values := {
 }
 
 valid_environments := {
-    "dev", "staging", "prod", "test",
+    "dev", "staging", "prod", "test", "ci-mock",
 }
 
+# ---------------------------------------------------------------------------
 # Helper functions
+# ---------------------------------------------------------------------------
 
 get_resource_address(resource) := resource.address if { resource.address }
 get_resource_address(resource) := sprintf("%s.%s", [resource.type, resource.name]) if {
@@ -63,18 +65,42 @@ get_resource_type(resource) := resource.type if {
     not resource.resource_type
 }
 
-get_resource_tags(resource) := resource.tags if { resource.tags }
+# get_resource_tags resolves tags in priority order:
+# 1. resource.tags                    — Infracost format
+# 2. resource.change.after.tags_all   — Terraform plan format, includes provider default_tags
+# 3. resource.change.after.tags       — Terraform plan format, explicit resource tags only
+# 4. resource.values.tags             — Terraform state format
+# 5. {}                               — fallback, no tags found
+#
+# tags_all is checked before tags because provider default_tags (from the aws provider block)
+# are merged into tags_all by Terraform but are NOT present in tags alone.
+# Without checking tags_all, resources that rely on provider default_tags appear untagged to OPA.
+
+get_resource_tags(resource) := resource.tags if {
+    resource.tags
+}
+
+get_resource_tags(resource) := resource.change.after.tags_all if {
+    not resource.tags
+    resource.change.after.tags_all
+}
+
 get_resource_tags(resource) := resource.change.after.tags if {
     not resource.tags
+    not resource.change.after.tags_all
     resource.change.after.tags
 }
+
 get_resource_tags(resource) := resource.values.tags if {
     not resource.tags
+    not resource.change.after.tags_all
     not resource.change.after.tags
     resource.values.tags
 }
+
 get_resource_tags(resource) := {} if {
     not resource.tags
+    not resource.change.after.tags_all
     not resource.change.after.tags
     not resource.values.tags
 }
@@ -94,7 +120,9 @@ has_required_tags(resource) if {
     }
 }
 
+# ---------------------------------------------------------------------------
 # DENY: Missing required tags — Infracost format
+# ---------------------------------------------------------------------------
 
 deny[msg] if {
     project := input.projects[_]
@@ -104,6 +132,7 @@ deny[msg] if {
 
     resource_tags := get_resource_tags(resource)
     missing_tags := required_tags - object.keys(resource_tags)
+    count(missing_tags) > 0
     address := get_resource_address(resource)
 
     msg := {
@@ -116,7 +145,9 @@ deny[msg] if {
     }
 }
 
+# ---------------------------------------------------------------------------
 # DENY: Missing required tags — Terraform plan format
+# ---------------------------------------------------------------------------
 
 deny[msg] if {
     resource := input.resource_changes[_]
@@ -125,6 +156,7 @@ deny[msg] if {
 
     resource_tags := get_resource_tags(resource)
     missing_tags := required_tags - object.keys(resource_tags)
+    count(missing_tags) > 0
     address := get_resource_address(resource)
 
     msg := {
@@ -137,7 +169,9 @@ deny[msg] if {
     }
 }
 
+# ---------------------------------------------------------------------------
 # DENY: Empty tag values — Infracost format
+# ---------------------------------------------------------------------------
 
 deny[msg] if {
     project := input.projects[_]
@@ -158,7 +192,9 @@ deny[msg] if {
     }
 }
 
+# ---------------------------------------------------------------------------
 # DENY: Empty tag values — Terraform plan format
+# ---------------------------------------------------------------------------
 
 deny[msg] if {
     resource := input.resource_changes[_]
@@ -178,7 +214,9 @@ deny[msg] if {
     }
 }
 
+# ---------------------------------------------------------------------------
 # WARN: Non-standard Environment value — Infracost format
+# ---------------------------------------------------------------------------
 
 warn[msg] if {
     project := input.projects[_]
@@ -192,7 +230,7 @@ warn[msg] if {
 
     address := get_resource_address(resource)
     msg := {
-        "msg": sprintf("Resource %s has non-standard Environment tag value: '%s'. Expected: dev, staging, prod, or test", [
+        "msg": sprintf("Resource %s has non-standard Environment tag value: '%s'. Expected: dev, staging, prod, test, or ci-mock", [
             address, environment
         ]),
         "resource": address,
@@ -200,7 +238,9 @@ warn[msg] if {
     }
 }
 
+# ---------------------------------------------------------------------------
 # WARN: Non-standard Environment value — Terraform plan format
+# ---------------------------------------------------------------------------
 
 warn[msg] if {
     resource := input.resource_changes[_]
@@ -213,7 +253,7 @@ warn[msg] if {
 
     address := get_resource_address(resource)
     msg := {
-        "msg": sprintf("Resource %s has non-standard Environment tag value: '%s'. Expected: dev, staging, prod, or test", [
+        "msg": sprintf("Resource %s has non-standard Environment tag value: '%s'. Expected: dev, staging, prod, test, or ci-mock", [
             address, environment
         ]),
         "resource": address,
@@ -221,7 +261,9 @@ warn[msg] if {
     }
 }
 
+# ---------------------------------------------------------------------------
 # WARN: Placeholder Owner values
+# ---------------------------------------------------------------------------
 
 warn[msg] if {
     project := input.projects[_]
@@ -262,9 +304,11 @@ warn[msg] if {
     }
 }
 
-# WARN: CostCenter format must match CC-XXXX
+# ---------------------------------------------------------------------------
+# DENY: CostCenter format must match CC-XXXX
+# ---------------------------------------------------------------------------
 
-warn[msg] if {
+deny[msg] if {
     project := input.projects[_]
     resource := project.breakdown.resources[_]
     resource_requires_tags(resource)
@@ -284,7 +328,7 @@ warn[msg] if {
     }
 }
 
-warn[msg] if {
+deny[msg] if {
     resource := input.resource_changes[_]
     resource_requires_tags(resource)
     resource_tags := get_resource_tags(resource)

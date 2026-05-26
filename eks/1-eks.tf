@@ -1,4 +1,3 @@
-# IAM Role for EKS Cluster
 resource "aws_iam_role" "eks" {
   name = "${var.env}-${var.eks_name}-eks-cluster"
 
@@ -31,7 +30,7 @@ resource "aws_kms_key" "eks" {
   deletion_window_in_days = 10
   enable_key_rotation     = true
 
-  tags = merge(var.common_tags, {
+  tags = merge(module.tags.tags, {
     Name = "${var.env}-${var.eks_name}-kms-key"
     Type = "KMSKey"
   })
@@ -77,7 +76,7 @@ resource "aws_security_group" "eks_cluster" {
   description = "Security group for EKS cluster control plane"
   vpc_id      = var.vpc_id
 
-  tags = merge(var.common_tags, {
+  tags = merge(module.tags.tags, {
     Name = "${var.env}-${var.eks_name}-cluster-sg"
     Type = "SecurityGroup"
   })
@@ -88,7 +87,7 @@ resource "aws_security_group" "eks_nodes" {
   description = "Security group for EKS worker nodes"
   vpc_id      = var.vpc_id
 
-  tags = merge(var.common_tags, {
+  tags = merge(module.tags.tags, {
     Name = "${var.env}-${var.eks_name}-nodes-sg"
     Type = "SecurityGroup"
   })
@@ -209,7 +208,7 @@ resource "aws_eks_cluster" "this" {
     resources = ["secrets"]
   }
 
-  tags = merge(var.common_tags, {
+  tags = merge(module.tags.tags, {
     Name                      = "${var.env}-${var.eks_name}"
     Type                      = "EKSCluster"
     "checkov:skip=CKV_AWS_39" = "Public endpoint needed for CI/CD and remote management"
@@ -242,7 +241,7 @@ resource "aws_eks_access_entry" "admins" {
   principal_arn = each.value
   type          = "STANDARD"
 
-  tags = merge(var.common_tags, {
+  tags = merge(module.tags.tags, {
     Name = "${var.env}-${var.eks_name}-admin-access"
     Type = "EKSAccessEntry"
   })
@@ -267,7 +266,7 @@ resource "aws_eks_access_entry" "github_actions" {
   principal_arn = var.github_actions_role_arn
   type          = "STANDARD"
 
-  tags = merge(var.common_tags, {
+  tags = merge(module.tags.tags, {
     Name = "${var.env}-${var.eks_name}-github-actions-access"
     Type = "EKSAccessEntry"
   })

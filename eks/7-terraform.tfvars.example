@@ -1,25 +1,30 @@
-env = "Dev"
-eks_name = "demo"
+env         = "Dev"
+region      = "eu-west-1"
+eks_name    = "demo"
 eks_version = "1.33"
+
 # Mock subnet IDs - format matches real AWS subnet IDs
 subnet_ids = ["subnet-0123456789abcdef0", "subnet-0fedcba9876543210"]
 
-common_tags = {
-  Environment = "ci-mock"
-  Owner       = "platform-team"
-  Project     = "infrastructure"
-  CostCenter  = "engineering"
-}
+github_actions_role_arn = "arn:aws:iam::123456789012:role/GitHubActionsRole"
 
 node_groups = {
   main = {
-    capacity_type = "ON_DEMAND"
+    capacity_type  = "ON_DEMAND"
     instance_types = ["m5.xlarge"]
-    disk_size     = 20
-    scaling_config =  {
-      min_size      = 1
-      max_size      = 3
-      desired_size  = 2
+    disk_size      = 20
+    scaling_config = {
+      min_size     = 1
+      max_size     = 3
+      desired_size = 2
     }
   }
 }
+
+# ---------------------------------------------------------------------------
+# Required tags — validated by modules/tags
+# ---------------------------------------------------------------------------
+project     = "infrastructure-modules"
+environment = "dev"
+owner       = "engineering"
+cost_center = "CC-0001"
