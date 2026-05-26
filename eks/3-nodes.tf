@@ -20,7 +20,7 @@ resource "aws_launch_template" "eks_nodes" {
     http_put_response_hop_limit = 1
   }
 
-  tags = merge(var.common_tags, {
+  tags = merge(module.tags.tags, {
     Name = "${var.env}-${var.eks_name}-${each.key}-launch-template"
     Type = "EKSLaunchTemplate"
   })
@@ -52,7 +52,6 @@ resource "aws_eks_node_group" "this" {
     max_unavailable = 1
   }
 
-  # Labels from variable merged with the node group key
   labels = merge(
     { role = each.key },
     each.value.labels
@@ -69,7 +68,7 @@ resource "aws_eks_node_group" "this" {
 
   depends_on = [aws_iam_role_policy_attachment.nodes]
 
-  tags = merge(var.common_tags, {
+  tags = merge(module.tags.tags, {
     Name = "${var.env}-${var.eks_name}-${each.key}-node-group"
     Type = "EKSNodeGroup"
   })

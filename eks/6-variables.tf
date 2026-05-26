@@ -1,6 +1,12 @@
 variable "env" {
-  description = "Environment name"
+  description = "Environment name — used for resource naming"
   type        = string
+}
+
+variable "region" {
+  description = "AWS region to deploy into"
+  type        = string
+  default     = "eu-west-1"
 }
 
 variable "vpc_id" {
@@ -83,8 +89,26 @@ variable "github_actions_role_arn" {
   type        = string
 }
 
-variable "common_tags" {
-  description = "Common tags to apply to all resources"
-  type        = map(string)
-  default     = {}
+# ---------------------------------------------------------------------------
+# Tag variables — consumed by modules/tags
+# ---------------------------------------------------------------------------
+
+variable "project" {
+  description = "Project name"
+  type        = string
+}
+
+variable "environment" {
+  description = "Deployment environment (dev, staging, prod)"
+  type        = string
+}
+
+variable "owner" {
+  description = "Team responsible for these resources"
+  type        = string
+}
+
+variable "cost_center" {
+  description = "Cost center for billing and chargeback"
+  type        = string
 }
