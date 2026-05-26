@@ -1,4 +1,3 @@
-
 data "aws_iam_policy_document" "ebs_csi" {
   count = local.irsa_ready && var.enable_ebs_csi_driver ? 1 : 0
 
@@ -24,9 +23,10 @@ resource "aws_iam_role" "ebs_csi" {
   name               = "${var.eks_name}-ebs-csi"
   assume_role_policy = data.aws_iam_policy_document.ebs_csi[0].json
 
-  tags = {
-    "eks_addon" = "ebs-csi-driver"
-  }
+  tags = merge(module.tags.tags, {
+    Name     = "${var.eks_name}-ebs-csi"
+    EksAddon = "ebs-csi-driver"
+  })
 }
 
 resource "aws_iam_role_policy_attachment" "ebs_csi" {
@@ -44,9 +44,10 @@ resource "aws_eks_addon" "ebs_csi" {
 
   depends_on = [aws_iam_role_policy_attachment.ebs_csi]
 
-  tags = {
-    "eks_addon" = "ebs-csi-driver"
-  }
+  tags = merge(module.tags.tags, {
+    Name     = "${var.eks_name}-ebs-csi"
+    EksAddon = "ebs-csi-driver"
+  })
 }
 
 resource "kubernetes_storage_class" "gp3" {

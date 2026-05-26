@@ -23,9 +23,10 @@ resource "aws_iam_role" "external_secrets" {
   name               = "${var.eks_name}-external-secrets"
   assume_role_policy = data.aws_iam_policy_document.external_secrets[0].json
 
-  tags = {
-    "eks_addon" = "external-secrets"
-  }
+  tags = merge(module.tags.tags, {
+    Name     = "${var.eks_name}-external-secrets"
+    EksAddon = "external-secrets"
+  })
 }
 
 resource "aws_iam_policy" "external_secrets" {
@@ -56,9 +57,10 @@ resource "aws_iam_policy" "external_secrets" {
     ]
   })
 
-  tags = {
-    "eks_addon" = "external-secrets"
-  }
+  tags = merge(module.tags.tags, {
+    Name     = "${var.eks_name}-external-secrets"
+    EksAddon = "external-secrets"
+  })
 }
 
 resource "aws_iam_role_policy_attachment" "external_secrets" {

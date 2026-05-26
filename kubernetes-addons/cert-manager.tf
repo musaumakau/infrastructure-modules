@@ -23,9 +23,10 @@ resource "aws_iam_role" "cert_manager" {
   name               = "${var.eks_name}-cert-manager"
   assume_role_policy = data.aws_iam_policy_document.cert_manager[0].json
 
-  tags = {
-    "eks_addon" = "cert-manager"
-  }
+  tags = merge(module.tags.tags, {
+    Name     = "${var.eks_name}-cert-manager"
+    EksAddon = "cert-manager"
+  })
 }
 
 resource "aws_iam_policy" "cert_manager" {
@@ -56,11 +57,12 @@ resource "aws_iam_policy" "cert_manager" {
     ]
   })
 
-  tags = {
-    "eks_addon"                = "cert-manager"
+  tags = merge(module.tags.tags, {
+    Name                       = "${var.eks_name}-cert-manager"
+    EksAddon                   = "cert-manager"
     "checkov:skip=CKV_AWS_355" = "cert-manager requires wildcard to list hosted zones"
     "checkov:skip=CKV_AWS_290" = "route53:ListHostedZonesByName requires wildcard resource"
-  }
+  })
 }
 
 resource "aws_iam_role_policy_attachment" "cert_manager" {

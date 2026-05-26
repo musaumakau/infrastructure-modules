@@ -22,16 +22,23 @@ resource "aws_iam_role" "cluster_autoscaler" {
   count              = local.irsa_ready && var.enable_cluster_autoscaler ? 1 : 0
   name               = "${var.eks_name}-cluster-autoscaler"
   assume_role_policy = data.aws_iam_policy_document.cluster_autoscaler[0].json
+
+  tags = merge(module.tags.tags, {
+    Name     = "${var.eks_name}-cluster-autoscaler"
+    EksAddon = "cluster-autoscaler"
+  })
 }
 
 resource "aws_iam_policy" "cluster_autoscaler" {
   count = local.irsa_ready && var.enable_cluster_autoscaler ? 1 : 0
   name  = "${var.eks_name}-cluster-autoscaler"
 
-  tags = {
+  tags = merge(module.tags.tags, {
+    Name                       = "${var.eks_name}-cluster-autoscaler"
+    EksAddon                   = "cluster-autoscaler"
     "checkov:skip=CKV_AWS_355" = "Cluster Autoscaler requires wildcard for dynamic scaling"
     "checkov:skip=CKV_AWS_290" = "Necessary wildcard for EC2 and ASG describe actions"
-  }
+  })
 
   policy = jsonencode({
     Version = "2012-10-17"
