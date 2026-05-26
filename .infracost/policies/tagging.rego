@@ -48,7 +48,9 @@ valid_environments := {
     "dev", "staging", "prod", "test", "ci-mock",
 }
 
+# ---------------------------------------------------------------------------
 # Helper functions
+# ---------------------------------------------------------------------------
 
 get_resource_address(resource) := resource.address if { resource.address }
 get_resource_address(resource) := sprintf("%s.%s", [resource.type, resource.name]) if {
@@ -118,8 +120,9 @@ has_required_tags(resource) if {
     }
 }
 
-
+# ---------------------------------------------------------------------------
 # DENY: Missing required tags — Infracost format
+# ---------------------------------------------------------------------------
 
 deny[msg] if {
     project := input.projects[_]
@@ -129,6 +132,7 @@ deny[msg] if {
 
     resource_tags := get_resource_tags(resource)
     missing_tags := required_tags - object.keys(resource_tags)
+    count(missing_tags) > 0
     address := get_resource_address(resource)
 
     msg := {
@@ -141,9 +145,9 @@ deny[msg] if {
     }
 }
 
-     
+# ---------------------------------------------------------------------------
 # DENY: Missing required tags — Terraform plan format
-     
+# ---------------------------------------------------------------------------
 
 deny[msg] if {
     resource := input.resource_changes[_]
@@ -152,6 +156,7 @@ deny[msg] if {
 
     resource_tags := get_resource_tags(resource)
     missing_tags := required_tags - object.keys(resource_tags)
+    count(missing_tags) > 0
     address := get_resource_address(resource)
 
     msg := {
@@ -164,9 +169,9 @@ deny[msg] if {
     }
 }
 
-     
+# ---------------------------------------------------------------------------
 # DENY: Empty tag values — Infracost format
-     
+# ---------------------------------------------------------------------------
 
 deny[msg] if {
     project := input.projects[_]
@@ -187,9 +192,9 @@ deny[msg] if {
     }
 }
 
-     
+# ---------------------------------------------------------------------------
 # DENY: Empty tag values — Terraform plan format
-     
+# ---------------------------------------------------------------------------
 
 deny[msg] if {
     resource := input.resource_changes[_]
@@ -209,9 +214,9 @@ deny[msg] if {
     }
 }
 
-     
+# ---------------------------------------------------------------------------
 # WARN: Non-standard Environment value — Infracost format
-     
+# ---------------------------------------------------------------------------
 
 warn[msg] if {
     project := input.projects[_]
@@ -233,9 +238,9 @@ warn[msg] if {
     }
 }
 
-     
+# ---------------------------------------------------------------------------
 # WARN: Non-standard Environment value — Terraform plan format
-     
+# ---------------------------------------------------------------------------
 
 warn[msg] if {
     resource := input.resource_changes[_]
@@ -256,8 +261,9 @@ warn[msg] if {
     }
 }
 
-     
+# ---------------------------------------------------------------------------
 # WARN: Placeholder Owner values
+# ---------------------------------------------------------------------------
 
 warn[msg] if {
     project := input.projects[_]
@@ -298,9 +304,10 @@ warn[msg] if {
     }
 }
 
-     
+# ---------------------------------------------------------------------------
 # DENY: CostCenter format must match CC-XXXX
-     
+# ---------------------------------------------------------------------------
+
 deny[msg] if {
     project := input.projects[_]
     resource := project.breakdown.resources[_]
