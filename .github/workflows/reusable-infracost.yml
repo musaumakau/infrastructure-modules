@@ -182,7 +182,7 @@ jobs:
           with open('$PLAN_FILE') as f:
               plan = json.load(f)
           required = {'Environment', 'Owner', 'Project', 'CostCenter'}
-          skip_types = {'aws_security_group_rule'}
+          skip_types = {'aws_security_group_rule', 'aws_iam_role_policy', 'aws_kms_alias', 'aws_route_table_association'}
           untagged = []
           for r in plan.get('resource_changes', []):
               if r['type'] in skip_types: continue
