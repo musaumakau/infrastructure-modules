@@ -64,6 +64,19 @@ jobs:
           name: "plan-${{ matrix.module }}-${{ inputs.run-id }}"
           path: plans/${{ matrix.module }}
 
+
+      - name: Debug plan tags
+        run: |
+          python3 -c "
+          import json
+          with open('plans/${{ matrix.module }}/tfplan.json') as f:
+              plan = json.load(f)
+          for r in plan.get('resource_changes', []):
+              if r['type'] == 'aws_vpc':
+                  print('tags:', r['change'].get('after', {}).get('tags'))
+                  print('tags_all:', r['change'].get('after', {}).get('tags_all'))
+          "
+
       - name: Verify plan artifact
         run: |
           set -euo pipefail
