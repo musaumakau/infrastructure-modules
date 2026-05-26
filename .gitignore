@@ -42,4 +42,5 @@ terraform.rc
 **/pricing.gob
 
 # tfenv version file — not needed in version control
-1.7.0
+1.7.0.DS_Store
+**/.DS_Store
