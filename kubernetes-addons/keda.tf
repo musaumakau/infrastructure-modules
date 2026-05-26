@@ -23,9 +23,10 @@ resource "aws_iam_role" "keda" {
   name               = "${var.eks_name}-keda"
   assume_role_policy = data.aws_iam_policy_document.keda[0].json
 
-  tags = {
-    "eks_addon" = "keda"
-  }
+  tags = merge(module.tags.tags, {
+    Name     = "${var.eks_name}-keda"
+    EksAddon = "keda"
+  })
 }
 
 resource "aws_iam_policy" "keda" {
@@ -59,11 +60,12 @@ resource "aws_iam_policy" "keda" {
     ]
   })
 
-  tags = {
-    "eks_addon"                = "keda"
+  tags = merge(module.tags.tags, {
+    Name                       = "${var.eks_name}-keda"
+    EksAddon                   = "keda"
     "checkov:skip=CKV_AWS_290" = "KEDA requires CloudWatch read access for metric-based scaling"
     "checkov:skip=CKV_AWS_355" = "CloudWatch metrics require wildcard resource as they are not resource-specific"
-  }
+  })
 }
 
 resource "aws_iam_role_policy_attachment" "keda" {
@@ -94,5 +96,3 @@ resource "helm_release" "keda" {
 
   depends_on = [aws_iam_role_policy_attachment.keda, helm_release.aws_lbc]
 }
-
-

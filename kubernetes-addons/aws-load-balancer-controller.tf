@@ -25,9 +25,10 @@ resource "aws_iam_role" "aws_lbc" {
   name               = "${var.eks_name}-aws-lbc"
   assume_role_policy = data.aws_iam_policy_document.aws_lbc[0].json
 
-  tags = {
-    "eks_addon" = "aws-load-balancer-controller"
-  }
+  tags = merge(module.tags.tags, {
+    Name     = "${var.eks_name}-aws-lbc"
+    EksAddon = "aws-load-balancer-controller"
+  })
 }
 
 resource "aws_iam_policy" "aws_lbc" {
@@ -35,9 +36,10 @@ resource "aws_iam_policy" "aws_lbc" {
   name   = "${var.eks_name}-aws-lbc"
   policy = file("${path.module}/policies/aws-lbc-policy.json")
 
-  tags = {
-    "eks_addon" = "aws-load-balancer-controller"
-  }
+  tags = merge(module.tags.tags, {
+    Name     = "${var.eks_name}-aws-lbc"
+    EksAddon = "aws-load-balancer-controller"
+  })
 }
 
 resource "aws_iam_role_policy_attachment" "aws_lbc" {

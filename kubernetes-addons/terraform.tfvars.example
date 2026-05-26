@@ -1,6 +1,24 @@
-env = "Dev"
-eks_name = "demo"
-eks_version = "1.33"
+eks_name                        = "demo"
+aws_region                      = "eu-west-1"
+aws_account_id                  = "123456789012"
 cluster_autoscaler_helm_version = "9.48.0"
-cluster_oidc_issuer_url = "https://oidc.eks.eu-west-1.amazonaws.com/id/EXAMPLED539D4633E53DE1B71EXAMPLE"
+cluster_oidc_issuer_url         = "https://oidc.eks.eu-west-1.amazonaws.com/id/EXAMPLED539D4633E53DE1B71EXAMPLE"
+vpc_id                          = "vpc-00000000000000000"
 
+ebs_csi_addon_version          = "v1.28.0-eksbuild.1"
+metrics_server_helm_version    = "3.12.1"
+external_secrets_helm_version  = "0.9.13"
+cert_manager_helm_version      = "v1.14.4"
+external_dns_helm_version      = "1.14.4"
+kube_prometheus_stack_helm_version = "57.2.0"
+loki_helm_version              = "2.10.2"
+keda_helm_version              = "2.13.2"
+aws_lbc_helm_version           = "1.7.1"
+
+# ---------------------------------------------------------------------------
+# Required tags — validated by modules/tags
+# ---------------------------------------------------------------------------
+project     = "infrastructure-modules"
+environment = "dev"
+owner       = "engineering"
+cost_center = "CC-0001"

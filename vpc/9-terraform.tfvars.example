@@ -19,7 +19,6 @@ public_subnet_tags = {
 
 
 # Required tags — validated by modules/tags
-
 project     = "infrastructure-modules"
 environment = "dev"
 owner       = "engineering"

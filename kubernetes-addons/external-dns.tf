@@ -25,9 +25,10 @@ resource "aws_iam_role" "external_dns" {
   name               = "${var.eks_name}-external-dns"
   assume_role_policy = data.aws_iam_policy_document.external_dns[0].json
 
-  tags = {
-    "eks_addon" = "external-dns"
-  }
+  tags = merge(module.tags.tags, {
+    Name     = "${var.eks_name}-external-dns"
+    EksAddon = "external-dns"
+  })
 }
 
 resource "aws_iam_policy" "external_dns" {
@@ -54,11 +55,12 @@ resource "aws_iam_policy" "external_dns" {
     ]
   })
 
-  tags = {
-    "eks_addon"                = "external-dns"
+  tags = merge(module.tags.tags, {
+    Name                       = "${var.eks_name}-external-dns"
+    EksAddon                   = "external-dns"
     "checkov:skip=CKV_AWS_355" = "External DNS requires wildcard to list all hosted zones"
     "checkov:skip=CKV_AWS_290" = "External DNS requires wildcard for Route53 list actions"
-  }
+  })
 }
 
 resource "aws_iam_role_policy_attachment" "external_dns" {

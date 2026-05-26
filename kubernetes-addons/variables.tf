@@ -1,4 +1,3 @@
-
 # Core Cluster Inputs
 
 variable "eks_name" {
@@ -205,7 +204,6 @@ variable "keda_helm_version" {
 # irsa_ready: IRSA is configured and helm deployments are not skipped
 # helm_ready: helm deployments are not skipped (for addons that don't need IRSA)
 
-
 locals {
   irsa_ready = (
     !var.skip_helm_deployments &&
@@ -213,4 +211,28 @@ locals {
     var.openid_provider_arn != ""
   )
   helm_ready = !var.skip_helm_deployments
+}
+
+# ---------------------------------------------------------------------------
+# Tag variables — consumed by modules/tags
+# ---------------------------------------------------------------------------
+
+variable "project" {
+  description = "Project name"
+  type        = string
+}
+
+variable "environment" {
+  description = "Deployment environment (dev, staging, prod)"
+  type        = string
+}
+
+variable "owner" {
+  description = "Team responsible for these resources"
+  type        = string
+}
+
+variable "cost_center" {
+  description = "Cost center for billing and chargeback"
+  type        = string
 }
