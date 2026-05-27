@@ -188,6 +188,7 @@ data "aws_iam_policy_document" "plan_role" {
     resources = [
       "${aws_s3_bucket.plan_manifests.arn}/pr-*",
       "${aws_s3_bucket.plan_manifests.arn}/deploy-pointer/*",
+      "${aws_s3_bucket.plan_manifests.arn}/infracost-baseline/*",
     ]
   }
 
