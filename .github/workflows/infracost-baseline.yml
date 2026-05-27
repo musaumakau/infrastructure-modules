@@ -7,6 +7,8 @@ on:
       - 'eks/**'
       - 'vpc/**'
       - 'kubernetes-addons/**'
+      - 'cicd-state/**' 
+  workflow_dispatch:
 
 permissions: {}
 
