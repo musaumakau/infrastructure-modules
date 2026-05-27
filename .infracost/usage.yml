@@ -1,0 +1,10 @@
+version: 0.1
+resource_usage:
+  aws_nat_gateway.this:
+    monthly_data_processed_gb: 100
+  aws_s3_bucket.this:
+    monthly_storage_gb: 50
+    monthly_get_requests: 10000
+    monthly_put_requests: 1000
+  aws_cloudwatch_log_group.vpc_flow_log:
+    monthly_data_ingested_gb: 10

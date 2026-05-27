@@ -27,7 +27,7 @@ resource "aws_kms_key" "plan_manifests" {
   deletion_window_in_days = var.kms_deletion_window_days
   enable_key_rotation     = true
 
-  tags = merge(var.tags, {
+  tags = merge(module.tags.tags, {
     Name = "${var.project_name}-plan-manifests-kms"
   })
 }
@@ -110,7 +110,7 @@ resource "aws_kms_key_policy" "plan_manifests" {
 resource "aws_s3_bucket" "plan_manifests" {
   bucket = "${var.project_name}-terraform-plan-manifests"
 
-  tags = merge(var.tags, {
+  tags = merge(module.tags.tags, {
     Name                       = "${var.project_name}-terraform-plan-manifests"
     "checkov:skip=CKV2_AWS_62" = "Event notifications not required for ephemeral CI/CD artifact bucket"
     "checkov:skip=CKV_AWS_144" = "Cross-region replication not required for ephemeral CI/CD plan manifests"
@@ -210,7 +210,9 @@ resource "aws_iam_policy" "plan_role" {
   description = "Allows the plan pipeline role to write plan manifests to S3"
   policy      = data.aws_iam_policy_document.plan_role.json
 
-  tags = var.tags
+  tags = merge(module.tags.tags, {
+    Name = "${var.project_name}-cicd-plan-s3"
+  })
 }
 
 # -----------------------------------------------------------------------------
@@ -252,5 +254,7 @@ resource "aws_iam_policy" "deploy_role" {
   description = "Allows the deploy pipeline role to read plan manifests from S3"
   policy      = data.aws_iam_policy_document.deploy_role.json
 
-  tags = var.tags
+  tags = merge(module.tags.tags, {
+    Name = "${var.project_name}-cicd-deploy-s3"
+  })
 }
