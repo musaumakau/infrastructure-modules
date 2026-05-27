@@ -5,12 +5,13 @@ projects:
   - path: eks/
     name: "EKS Cluster"
     terraform_var_files:
-      - terraform.tfvars.example
+      - 7-terraform.tfvars.example
+     
 
   - path: vpc/
     name: "VPC Infrastructure"
     terraform_var_files:
-      - terraform.tfvars.example
+      - 9-terraform.tfvars.example
 
   - path: kubernetes-addons/
     name: "Kubernetes Add-ons"
