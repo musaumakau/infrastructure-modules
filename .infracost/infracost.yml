@@ -4,16 +4,18 @@ version: 0.1
 projects:
   - path: eks/
     name: "EKS Cluster"
-    # Optional: Add terraform variables if needed
-    # terraform_var_files:
-    #   - terraform.tfvars
-    
+    terraform_var_files:
+      - 7-terraform.tfvars.example
+
   - path: vpc/
     name: "VPC Infrastructure"
-    
+    terraform_var_files:
+      - 9-terraform.tfvars.example
+
   - path: kubernetes-addons/
     name: "Kubernetes Add-ons"
-
+    terraform_var_files:
+      - terraform.tfvars.example
 
 policies:
   - path: policies/
