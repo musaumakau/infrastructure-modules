@@ -7,6 +7,12 @@ variable "project_name" {
   type        = string
 }
 
+
+variable "aws_region" {
+  description = "AWS region"
+  type        = string
+}
+
 variable "kms_deletion_window_days" {
   description = "Number of days before a scheduled KMS key deletion takes effect"
   type        = number
@@ -25,11 +31,6 @@ variable "noncurrent_version_retention_days" {
   default     = 30
 }
 
-variable "tags" {
-  description = "Tags to apply to all resources"
-  type        = map(string)
-  default     = {}
-}
 
 variable "oidc_role_arn" {
   description = "ARN of the OIDC role used by both pipelines — granted encrypt/decrypt access on the KMS key"
