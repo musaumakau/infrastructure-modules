@@ -36,3 +36,22 @@ variable "oidc_role_arn" {
   type        = string
 }
 
+variable "project" {
+  description = "Project name"
+  type        = string
+}
+
+variable "environment" {
+  description = "Deployment environment (dev, staging, prod)"
+  type        = string
+}
+
+variable "owner" {
+  description = "Team responsible for these resources"
+  type        = string
+}
+
+variable "cost_center" {
+  description = "Cost center for billing and chargeback"
+  type        = string
+}
