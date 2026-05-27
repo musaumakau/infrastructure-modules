@@ -7,6 +7,12 @@ variable "project_name" {
   type        = string
 }
 
+
+variable "aws_region" {
+  description = "AWS region"
+  type        = string
+}
+
 variable "kms_deletion_window_days" {
   description = "Number of days before a scheduled KMS key deletion takes effect"
   type        = number

@@ -23,6 +23,8 @@ projects:
     terraform_var_files:
       - terraform.tfvars.example
 
+    usage_file: ../.infracost/usage.yml    
+
 
 policies:
   - path: policies/
