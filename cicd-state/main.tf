@@ -29,6 +29,7 @@ resource "aws_kms_key" "plan_manifests" {
 
   tags = merge(module.tags.tags, {
     Name = "${var.project_name}-plan-manifests-kms"
+    Type = "KMSKey"
   })
 }
 
@@ -112,6 +113,7 @@ resource "aws_s3_bucket" "plan_manifests" {
 
   tags = merge(module.tags.tags, {
     Name                       = "${var.project_name}-terraform-plan-manifests"
+    Type                       = "S3Bucket"
     "checkov:skip=CKV2_AWS_62" = "Event notifications not required for ephemeral CI/CD artifact bucket"
     "checkov:skip=CKV_AWS_144" = "Cross-region replication not required for ephemeral CI/CD plan manifests"
     "checkov:skip=CKV_AWS_18"  = "Access logging not required for ephemeral internal CI/CD manifests"
@@ -210,8 +212,10 @@ resource "aws_iam_policy" "plan_role" {
   description = "Allows the plan pipeline role to write plan manifests to S3"
   policy      = data.aws_iam_policy_document.plan_role.json
 
+
   tags = merge(module.tags.tags, {
     Name = "${var.project_name}-cicd-plan-s3"
+    Type = "IAMPolicy"
   })
 }
 
@@ -256,5 +260,6 @@ resource "aws_iam_policy" "deploy_role" {
 
   tags = merge(module.tags.tags, {
     Name = "${var.project_name}-cicd-deploy-s3"
+    Type = "IAMPolicy"
   })
 }
