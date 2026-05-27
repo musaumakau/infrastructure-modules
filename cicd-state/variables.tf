@@ -1,13 +1,3 @@
-# =============================================================================
-# MODULE: cicd-state — variables
-# =============================================================================
-
-variable "project_name" {
-  description = "Project name used to prefix all resource names"
-  type        = string
-}
-
-
 variable "aws_region" {
   description = "AWS region"
   type        = string
