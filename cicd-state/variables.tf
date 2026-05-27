@@ -37,11 +37,6 @@ variable "oidc_role_arn" {
   type        = string
 }
 
-variable "region" {
-  description = "AWS region to deploy into"
-  type        = string
-  default     = "eu-west-1"
-}
 
 variable "project" {
   description = "Project name"
