@@ -339,6 +339,8 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --github-token "${{ github.token }}" \
             --pull-request "${{ github.event.pull_request.number }}" \
-            --behavior update
+            --behavior update \
+            --show-skipped
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          INFRACOST_ENABLE_CLOUD: true
