@@ -28,7 +28,7 @@ variable "oidc_role_arn" {
 }
 
 
-variable "project" {
+variable "project_name" {
   description = "Project name"
   type        = string
 }
