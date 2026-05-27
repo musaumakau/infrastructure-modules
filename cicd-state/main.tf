@@ -210,7 +210,7 @@ resource "aws_iam_policy" "plan_role" {
   description = "Allows the plan pipeline role to write plan manifests to S3"
   policy      = data.aws_iam_policy_document.plan_role.json
 
-  tags = merge(module.tags.tags,{
+  tags = merge(module.tags.tags, {
     Name = "${var.project_name}-cicd-plan-s3"
   })
 }
@@ -254,7 +254,7 @@ resource "aws_iam_policy" "deploy_role" {
   description = "Allows the deploy pipeline role to read plan manifests from S3"
   policy      = data.aws_iam_policy_document.deploy_role.json
 
-  tags = merge(module.tags.tags,{
+  tags = merge(module.tags.tags, {
     Name = "${var.project_name}-cicd-deploy-s3"
   })
 }
