@@ -25,14 +25,33 @@ variable "noncurrent_version_retention_days" {
   default     = 30
 }
 
-variable "tags" {
-  description = "Tags to apply to all resources"
-  type        = map(string)
-  default     = {}
-}
 
 variable "oidc_role_arn" {
   description = "ARN of the OIDC role used by both pipelines — granted encrypt/decrypt access on the KMS key"
   type        = string
 }
 
+variable "region" {
+  description = "AWS region to deploy into"
+  type        = string
+}
+
+variable "project" {
+  description = "Project name"
+  type        = string
+}
+
+variable "environment" {
+  description = "Deployment environment (dev, staging, prod)"
+  type        = string
+}
+
+variable "owner" {
+  description = "Team responsible for these resources"
+  type        = string
+}
+
+variable "cost_center" {
+  description = "Cost center for billing and chargeback"
+  type        = string
+}
