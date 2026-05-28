@@ -46,7 +46,7 @@ jobs:
           api-key: ${{ secrets.INFRACOST_API_KEY }}
 
       - name: Setup OPA
-        uses: open-policy-agent/setup-opa@34a30e8a924d1b03ce2cf7abe97250bbb1f332b5 # v2.2.0
+        uses: open-policy-agent/setup-opa@34a30e8a924d1b03ce2cf7abe97250bbb1f332b5  # v2.2.0
         with:
           version: latest
 
@@ -56,14 +56,11 @@ jobs:
           role-to-assume: arn:aws:iam::649203810550:role/EKSOIDCRoleForPR
           aws-region: eu-west-1
 
-      # Download plan artifact produced by reusable-plan-and-score.yml
-      # Eliminates the need to re-run terraform init + plan just for OPA
       - name: Download plan artifact
-        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16  # v4.1.8
         with:
           name: "plan-${{ matrix.module }}-${{ inputs.run-id }}"
           path: plans/${{ matrix.module }}
-
 
       - name: Verify plan artifact
         run: |
@@ -79,7 +76,6 @@ jobs:
           "
           echo "::endgroup::"
 
-      #           Infracost baseline (base branch)         
       - name: Generate baseline cost estimate
         run: |
           set -euo pipefail
@@ -92,7 +88,6 @@ jobs:
             --out-file /tmp/infracost-base-${{ matrix.module }}.json
           echo "::endgroup::"
 
-      #           Infracost PR branch                                                                        
       - name: Restore PR branch files
         run: git checkout HEAD -- ${{ matrix.module }}/
 
@@ -117,7 +112,6 @@ jobs:
             --compare-to /tmp/infracost-base-${{ matrix.module }}.json \
             --out-file /tmp/infracost-diff-${{ matrix.module }}.json
 
-          # Extract summary for aggregation
           SUMMARY=$(python3 -c "
           import json
           with open('/tmp/infracost-diff-${{ matrix.module }}.json') as f:
@@ -131,7 +125,33 @@ jobs:
           echo "summary=${SUMMARY}" >> "$GITHUB_OUTPUT"
           echo "::endgroup::"
 
-      #           OPA tagging policy        
+      - name: Block on large cost increases
+        run: |
+          set -euo pipefail
+          echo "::group::Cost threshold check — ${{ matrix.module }}"
+          python3 -c "
+          import json, sys
+
+          with open('/tmp/infracost-diff-${{ matrix.module }}.json') as f:
+              data = json.load(f)
+
+          diff  = float(data.get('diffTotalMonthlyCost') or 0)
+          total = float(data.get('totalMonthlyCost') or 0)
+
+          if diff > 500:
+              print(f'::error::Monthly cost increase \${diff:.2f} exceeds \$500 threshold for module ${{ matrix.module }}')
+              sys.exit(1)
+
+          if total > 0:
+              baseline = total - diff
+              if baseline > 0 and (diff / baseline) > 0.5:
+                  print(f'::error::Cost increase {(diff/baseline)*100:.0f}% exceeds 50% threshold for module ${{ matrix.module }}')
+                  sys.exit(1)
+
+          print(f'Cost increase \${diff:.2f}/month within acceptable range')
+          "
+          echo "::endgroup::"
+
       - name: Run tagging policy
         id: tagging
         run: |
@@ -150,21 +170,19 @@ jobs:
             exit 0
           fi
 
-          # Validate policy syntax
           opa fmt "$POLICY_FILE" > /dev/null 2>&1 || {
             echo "::error::tagging.rego has syntax errors"
             opa fmt "$POLICY_FILE" 2>&1
             exit 1
           }
 
-          # With this
           OPA_RESULT=$(opa eval \
             --data "$POLICY_FILE" \
             --input "$PLAN_FILE" \
             --format raw \
             'count(data.infracost.policies.tagging.deny)' 2>/dev/null || echo "0")
-          
-            if [ "${OPA_RESULT:-0}" -gt 0 ] 2>/dev/null; then
+
+          if [ "${OPA_RESULT:-0}" -gt 0 ] 2>/dev/null; then
             echo "Tagging violations:"
             opa eval \
               --data "$POLICY_FILE" \
@@ -176,7 +194,6 @@ jobs:
             echo "No tagging violations"
           fi
 
-          # jq-based tag check directly on plan as fallback
           UNTAGGED=$(python3 -c "
           import json
           with open('$PLAN_FILE') as f:
@@ -204,7 +221,6 @@ jobs:
           echo "untagged_count=${UNTAGGED_COUNT}" >> "$GITHUB_OUTPUT"
           echo "::endgroup::"
 
-      #OPA governance policy 
       - name: Run governance policy
         id: governance
         run: |
@@ -227,12 +243,11 @@ jobs:
             exit 1
           }
 
-          # Deny violations
           DENY_RESULT=$(opa eval \
-          --data "$POLICY_FILE" \
-          --input "$COST_FILE" \
-          --format raw \
-          'count(data.infracost.policies.governance.deny)' 2>/dev/null || echo "0")
+            --data "$POLICY_FILE" \
+            --input "$COST_FILE" \
+            --format raw \
+            'count(data.infracost.policies.governance.deny)' 2>/dev/null || echo "0")
 
           if [ "${DENY_RESULT:-0}" -gt 0 ] 2>/dev/null; then
             echo "Governance violations:"
@@ -245,9 +260,7 @@ jobs:
           else
             echo "No governance violations"
           fi
-        
 
-          # Warnings (non-blocking)
           WARN_RESULT=$(opa eval \
             --data "$POLICY_FILE" \
             --input "$COST_FILE" \
@@ -266,7 +279,6 @@ jobs:
           echo "governance_violations=${VIOLATIONS}" >> "$GITHUB_OUTPUT"
           echo "::endgroup::"
 
-      #           Upload diff artifact for aggregation                                                                                                                                                 
       - name: Upload cost diff artifact
         uses: actions/upload-artifact@5d5d22a31266ced268874388b861e4b58bb5c2f3  # v4.3.1
         if: always()
@@ -289,7 +301,6 @@ jobs:
           fi
           echo "All policies passed"
 
-  #           Aggregated PR comment                                                                        
   comment:
     name: Post unified PR comment
     runs-on: ubuntu-latest
@@ -312,7 +323,7 @@ jobs:
           path: cost-diffs
 
       - name: Setup Infracost
-        uses: infracost/actions/setup@e9d6e6cd65e168e76b0de50ff9957d2fe8bb1832 # v3.0.1
+        uses: infracost/actions/setup@e9d6e6cd65e168e76b0de50ff9957d2fe8bb1832  # v3.0.1
         with:
           api-key: ${{ secrets.INFRACOST_API_KEY }}
 
@@ -320,7 +331,6 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Merge all module diffs into one comment
           DIFF_FILES=$(ls cost-diffs/infracost-diff-*.json 2>/dev/null || true)
 
           if [ -z "$DIFF_FILES" ]; then
@@ -328,7 +338,6 @@ jobs:
             exit 0
           fi
 
-          # infracost comment supports multiple --path flags for merged output
           PATH_ARGS=""
           for f in $DIFF_FILES; do
             PATH_ARGS="$PATH_ARGS --path $f"
