@@ -65,6 +65,54 @@ All billable resources must include these tags:
 
 Empty tag values and placeholder Owner values (`admin`, `root`, `unknown`, `tbd`) are treated as policy violations.
 
+
+### Tagging Strategy
+
+Tags are managed through a shared `modules/tags/` module that acts as the single
+source of truth for all resource tags. Every module calls it to get a guaranteed-
+compliant tag map rather than managing tag merging individually.
+
+The module enforces three layers of tags with explicit merge precedence:
+
+extra_tags < required_tags < computed_tags
+
+- **`extra_tags`** — optional caller-supplied tags (e.g. `Name`, `Type`)
+- **`required_tags`** — the four mandatory tags validated at input level (`Project`,
+  `Environment`, `Owner`, `CostCenter`)
+- **`computed_tags`** — automatically set by the module and cannot be overridden:
+  `ManagedBy = "terraform"` and `TerraformModule = <module_name>`
+
+Input validation is enforced via Terraform variable validations — `environment` must
+be one of `dev`, `staging`, `prod`, or `ci-mock`, and all required fields must be
+non-empty. Invalid values fail at `terraform plan` time, not at apply.
+
+**Usage:**
+
+```hcl
+module "tags" {
+  source      = "../modules/tags"
+  project     = var.project
+  environment = var.environment
+  owner       = var.owner
+  cost_center = var.cost_center
+  module_name = "vpc"
+
+  extra_tags = {
+    Name = "${var.env}-vpc"
+    Type = "VPC"
+  }
+}
+
+# Inject into every resource
+resource "aws_vpc" "this" {
+  cidr_block = var.cidr_block
+  tags       = module.tags.tags
+}
+```
+
+The OPA tagging policy validates the same four required tags at pipeline time,
+providing a second enforcement layer for any resources that bypass the module.
+
 ### Cost Limits
 
 Automated cost controls prevent budget overruns:
