@@ -93,7 +93,6 @@ jobs:
 
           terraform -chdir="$CACHE_DIR" show -json tfplan.binary \
             > "$GITHUB_WORKSPACE/tfplan.json"
-            
 
       - name: Score blast radius
         id: score
@@ -101,35 +100,148 @@ jobs:
           python3 << 'EOF'
           import json, os
 
+          # ---------------------------------------------------------------
+          # Fingerprint schemas — what to capture per resource type.
+          # CAPTURE: properties that materially affect security/reliability/cost.
+          # IGNORE:  volatile fields — tags, ARNs, timestamps, computed IDs.
+          #
+          # To add a new resource type: add an entry to FINGERPRINT_SCHEMA.
+          # The gate in infrastructure-live picks it up automatically.
+          # ---------------------------------------------------------------
+          FINGERPRINT_SCHEMA = {
+              'aws_security_group': {
+                  'capture': ['ingress', 'egress'],
+                  'ignore':  ['tags', 'tags_all', 'description', 'name',
+                              'timeouts', 'id', 'arn'],
+              },
+              'aws_iam_role': {
+                  'capture': ['assume_role_policy', 'managed_policy_arns',
+                              'inline_policy', 'permissions_boundary',
+                              'max_session_duration'],
+                  'ignore':  ['tags', 'tags_all', 'description', 'name',
+                              'path', 'id', 'arn', 'unique_id', 'create_date'],
+              },
+              'aws_s3_bucket': {
+                  'capture': ['bucket_policy',
+                              'server_side_encryption_configuration',
+                              'versioning', 'public_access_block'],
+                  'ignore':  ['tags', 'tags_all', 'bucket', 'id', 'arn',
+                              'hosted_zone_id', 'region', 'bucket_domain_name',
+                              'bucket_regional_domain_name', 'website_endpoint'],
+              },
+          }
+
+          def normalize(value):
+              """
+              Canonical form for comparison.
+              - Dicts: sorted by key recursively
+              - Lists: each element normalized; sorted if elements are dicts
+                (order-insensitive for rule lists like ingress/egress)
+              - Strings: stripped
+              - None / unknown sentinels: returned as-is
+
+              Must stay identical to normalize() in the gate — both sides
+              need to produce the same output for the same input.
+              """
+              if isinstance(value, dict):
+                  return {k: normalize(v) for k, v in sorted(value.items())}
+              if isinstance(value, list):
+                  normalized = [normalize(i) for i in value]
+                  try:
+                      return sorted(normalized,
+                                    key=lambda x: json.dumps(x, sort_keys=True))
+                  except TypeError:
+                      return normalized
+              if isinstance(value, str):
+                  return value.strip()
+              return value
+
+          def extract_fingerprint(resource_type, after_values, after_unknown):
+              """
+              Extract and normalize only the captured properties for this
+              resource type. Skips properties that are unknown at plan time
+              (after_unknown sentinel) — can't compare what Terraform doesn't
+              know yet.
+
+              Returns { property_name: normalized_value } or None if this
+              resource type has no fingerprint schema.
+              """
+              schema = FINGERPRINT_SCHEMA.get(resource_type)
+              if not schema or after_values is None:
+                  return None
+
+              unknown_keys = set()
+              if isinstance(after_unknown, dict):
+                  unknown_keys = {k for k, v in after_unknown.items() if v is True}
+
+              fingerprint = {
+                  prop: normalize(after_values[prop])
+                  for prop in schema['capture']
+                  if prop not in unknown_keys and prop in after_values
+              }
+
+              return fingerprint if fingerprint else None
+
+          # ---------------------------------------------------------------
+          # Blast radius scoring (unchanged)
+          # ---------------------------------------------------------------
           with open(os.environ['GITHUB_WORKSPACE'] + '/tfplan.json') as f:
               plan = json.load(f)
 
           action_scores = {'create': 1, 'update': 2, 'delete': 10, 'replace': 8}
           resource_multipliers = {
-              'aws_eks_cluster': 20, 'aws_rds_instance': 15, 'aws_iam_role': 8,
-              'aws_security_group': 6, 'aws_vpc': 15, 'aws_subnet': 8,
-              'aws_kms_key': 10, 'aws_s3_bucket': 6, 'helm_release': 5,
+              'aws_eks_cluster':    20, 'aws_rds_instance': 15, 'aws_iam_role':      8,
+              'aws_security_group':  6, 'aws_vpc':          15, 'aws_subnet':        8,
+              'aws_kms_key':        10, 'aws_s3_bucket':     6, 'helm_release':      5,
               'kubernetes_manifest': 4,
           }
 
           changes, score = [], 0
+
           for r in plan.get('resource_changes', []):
               if r['change']['actions'] == ['no-op']:
                   continue
+
               action     = r['change']['actions'][0]
               multiplier = resource_multipliers.get(r['type'], 1)
               rscore     = action_scores.get(action, 1) * multiplier
               score     += rscore
-              changes.append({'address': r['address'], 'type': r['type'],
-                              'actions': r['change']['actions'], 'score': rscore})
 
+              # Extract semantic fingerprint for high-risk resource types
+              after_values  = r['change'].get('after') or {}
+              after_unknown = r['change'].get('after_unknown') or {}
+              fingerprint   = extract_fingerprint(r['type'], after_values, after_unknown)
+
+              entry = {
+                  'address': r['address'],
+                  'type':    r['type'],
+                  'actions': r['change']['actions'],
+                  'score':   rscore,
+              }
+
+              # Only add fingerprint key if this resource type has a schema
+              if fingerprint is not None:
+                  entry['fingerprint'] = fingerprint
+
+              changes.append(entry)
+
+          # ---------------------------------------------------------------
+          # Write manifest
+          # manifest_version: 2 signals to the gate that fingerprints are
+          # present. v1 manifests (no fingerprints) skip the property drift
+          # check entirely — safe rollout, old deploys unaffected.
+          # ---------------------------------------------------------------
           manifest = {
-              'module': os.environ['MODULE'], 'environment': os.environ['ENVIRONMENT'],
-              'pr': os.environ.get('PR_NUMBER', ''), 'commit': os.environ['GITHUB_SHA'],
-              'score': score, 'total_resources': len(changes),
-              'deletions':    sum(1 for c in changes if 'delete'  in c['actions']),
-              'replacements': sum(1 for c in changes if 'replace' in c['actions']),
-              'resources': changes,
+              'module':           os.environ['MODULE'],
+              'environment':      os.environ['ENVIRONMENT'],
+              'pr':               os.environ.get('PR_NUMBER', ''),
+              'commit':           os.environ['GITHUB_SHA'],
+              'score':            score,
+              'total_resources':  len(changes),
+              'deletions':        sum(1 for c in changes if 'delete'  in c['actions']),
+              'replacements':     sum(1 for c in changes if 'replace' in c['actions']),
+              'resources':        changes,
+              'manifest_version': 2,
           }
 
           with open('manifest.json', 'w') as f:
@@ -146,7 +258,7 @@ jobs:
           ENVIRONMENT: ${{ inputs.environment }}
           PR_NUMBER:   ${{ github.event.pull_request.number }}
 
-      - name: Upload plan artifacts        
+      - name: Upload plan artifacts
         uses: actions/upload-artifact@5d5d22a31266ced268874388b861e4b58bb5c2f3  # v4.3.1
         with:
           name: "plan-${{ matrix.module }}-${{ github.run_id }}"
@@ -154,8 +266,7 @@ jobs:
             ${{ github.workspace }}/tfplan.json
             manifest.json
           retention-days: 7
-          if-no-files-found: error    
-          
+          if-no-files-found: error
 
       - name: Upload manifest to S3
         run: |
