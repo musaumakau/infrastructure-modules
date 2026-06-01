@@ -1,0 +1,235 @@
+name: Reusable — EKS Integration Tests
+
+# Called by terraform-ci.yml when eks/ or vpc/ changes land on the
+# feat/terratest-eks branch or a PR targeting main.
+# Never triggered directly.
+on:
+  workflow_call:
+    inputs:
+      terraform-version:
+        type: string
+        required: false
+        default: '1.7.5'
+      aws-region:
+        type: string
+        required: false
+        default: 'eu-west-1'
+    secrets:
+      REPO_DISPATCH_PAT:
+        required: true
+
+# Deny-by-default — each job declares only what it needs
+permissions: {}
+
+jobs:
+  # ── Job 1: Go vet (no AWS, fast gate) ──────────────────────────────────────
+  go-vet:
+    name: Go vet
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version-file: test/eks/go.mod
+          cache-dependency-path: test/eks/go.sum
+
+      - name: go vet
+        working-directory: test/eks
+        run: go vet ./...
+
+  # ── Job 2: TestEKSLifecycle (~40 min, real AWS) ────────────────────────────
+  lifecycle:
+    name: TestEKSLifecycle
+    runs-on: ubuntu-latest
+    needs: [go-vet]
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      id-token: write   # required for OIDC token exchange
+    env:
+      TEST_AWS_REGION: ${{ inputs.aws-region }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version-file: test/eks/go.mod
+          cache-dependency-path: test/eks/go.sum
+
+      # Reuse the same composite action the rest of the CI pipeline uses.
+      # Installs Terraform + Terragrunt + restores plugin cache.
+      - name: Terraform + Terragrunt setup
+        uses: ./.github/actions/terraform-setup
+        with:
+          terraform-version: ${{ inputs.terraform-version }}
+          module: eks
+
+      # Reuse the same composite action for OIDC auth.
+      # role-arn and aws-region already have the correct defaults baked in.
+      - name: AWS auth (OIDC)
+        uses: ./.github/actions/aws-auth
+        with:
+          aws-region: ${{ inputs.aws-region }}
+          session-name-suffix: "terratest-lifecycle-${{ github.run_id }}"
+
+      - name: Verify AWS identity
+        run: aws sts get-caller-identity
+
+      # Install kubectl directly — no third-party action required.
+      # Pinned to the same minor version as the EKS cluster (1.30).
+      - name: Install kubectl
+        run: |
+          set -euo pipefail
+          KUBECTL_VERSION="v1.30.0"
+          curl -sSfL "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" \
+            -o /usr/local/bin/kubectl
+          chmod +x /usr/local/bin/kubectl
+          kubectl version --client
+
+      - name: Download Go modules
+        working-directory: test/eks
+        run: go mod download
+
+      - name: Run TestEKSLifecycle
+        working-directory: test/eks
+        run: |
+          go test -v -timeout 75m -run TestEKSLifecycle ./... \
+            2>&1 | tee /tmp/lifecycle.log
+        env:
+          # Passed through to Terraform module source URLs
+          TF_VAR_repo_dispatch_pat: ${{ secrets.REPO_DISPATCH_PAT }}
+
+      - name: Upload test log
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: lifecycle-log-${{ github.run_id }}
+          path: /tmp/lifecycle.log
+          retention-days: 7
+
+      # Best-effort safety net if the runner is killed before defer Destroy fires
+      - name: Emergency destroy — EKS (on failure)
+        if: failure()
+        working-directory: eks
+        run: |
+          echo "⚠️  Emergency destroy: EKS"
+          terraform init -backend=false || true
+          terraform destroy -auto-approve \
+            -var="env=terratest" \
+            -var="region=${{ inputs.aws-region }}" \
+            -var="eks_name=demo" \
+            || true
+        env:
+          TF_VAR_repo_dispatch_pat: ${{ secrets.REPO_DISPATCH_PAT }}
+
+      - name: Emergency destroy — VPC (on failure)
+        if: failure()
+        working-directory: vpc
+        run: |
+          echo "⚠️  Emergency destroy: VPC"
+          terraform init -backend=false || true
+          terraform destroy -auto-approve \
+            -var="env=terratest-eks-prereq" \
+            -var="region=${{ inputs.aws-region }}" \
+            || true
+        env:
+          TF_VAR_repo_dispatch_pat: ${{ secrets.REPO_DISPATCH_PAT }}
+
+  # ── Job 3: TestEKSIRSADisabled (~40 min, real AWS) ────────────────────────
+  # Sequential after lifecycle — avoids EKS/NAT/EIP quota exhaustion
+  irsa-disabled:
+    name: TestEKSIRSADisabled
+    runs-on: ubuntu-latest
+    needs: [lifecycle]     # intentionally sequential, not parallel
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      TEST_AWS_REGION: ${{ inputs.aws-region }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version-file: test/eks/go.mod
+          cache-dependency-path: test/eks/go.sum
+
+      - name: Terraform + Terragrunt setup
+        uses: ./.github/actions/terraform-setup
+        with:
+          terraform-version: ${{ inputs.terraform-version }}
+          module: eks
+
+      - name: AWS auth (OIDC)
+        uses: ./.github/actions/aws-auth
+        with:
+          aws-region: ${{ inputs.aws-region }}
+          session-name-suffix: "terratest-irsa-${{ github.run_id }}"
+
+      # Install kubectl directly — no third-party action required.
+      - name: Install kubectl
+        run: |
+          set -euo pipefail
+          KUBECTL_VERSION="v1.30.0"
+          curl -sSfL "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" \
+            -o /usr/local/bin/kubectl
+          chmod +x /usr/local/bin/kubectl
+          kubectl version --client
+
+      - name: Download Go modules
+        working-directory: test/eks
+        run: go mod download
+
+      - name: Run TestEKSIRSADisabled
+        working-directory: test/eks
+        run: |
+          go test -v -timeout 75m -run TestEKSIRSADisabled ./... \
+            2>&1 | tee /tmp/irsa.log
+        env:
+          TF_VAR_repo_dispatch_pat: ${{ secrets.REPO_DISPATCH_PAT }}
+
+      - name: Upload test log
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: irsa-log-${{ github.run_id }}
+          path: /tmp/irsa.log
+          retention-days: 7
+
+      - name: Emergency destroy — EKS (on failure)
+        if: failure()
+        working-directory: eks
+        run: |
+          echo "⚠️  Emergency destroy: EKS (IRSA-disabled test)"
+          terraform init -backend=false || true
+          terraform destroy -auto-approve \
+            -var="env=terratest-noirsa" \
+            -var="region=${{ inputs.aws-region }}" \
+            -var="eks_name=demo" \
+            || true
+        env:
+          TF_VAR_repo_dispatch_pat: ${{ secrets.REPO_DISPATCH_PAT }}
+
+      - name: Emergency destroy — VPC (on failure)
+        if: failure()
+        working-directory: vpc
+        run: |
+          echo "⚠️  Emergency destroy: VPC (IRSA-disabled test)"
+          terraform init -backend=false || true
+          terraform destroy -auto-approve \
+            -var="env=terratest-irsa-prereq" \
+            -var="region=${{ inputs.aws-region }}" \
+            || true
+        env:
+          TF_VAR_repo_dispatch_pat: ${{ secrets.REPO_DISPATCH_PAT }}
