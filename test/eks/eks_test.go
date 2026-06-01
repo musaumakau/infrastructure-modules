@@ -211,7 +211,7 @@ func vpcTerraformOptions(t *testing.T, env, cidrBlock string, azs, privateCIDRs,
 
 			// Tags match the live terragrunt stack exactly
 			"project":     "infrastructure-modules",
-			"environment": "test",
+			"environment": "ci-mock",
 			"owner":       "engineering",
 			"cost_center": "CC-0001",
 		},
@@ -275,7 +275,7 @@ func eksTerraformOptions(t *testing.T, env, vpcID string, subnetIDs []string) *t
 // Values mirror the live terragrunt inputs exactly.
 var requiredTags = map[string]string{
 	"Project":     "infrastructure-modules",
-	"Environment": "test",
+	"Environment": "ci-mock",     // matches `environment = "ci-mock"` in terragrunt inputs
 	"Owner":       "engineering", // matches `owner = "engineering"` in terragrunt inputs
 	"CostCenter":  "CC-0001",
 }
