@@ -259,7 +259,7 @@ func eksTerraformOptions(t *testing.T, env, vpcID string, subnetIDs []string) *t
 
 			// Tags match the live terragrunt stack exactly.
 			"project":     "infrastructure-modules",
-			"environment": "test",
+			"environment": "ci-mock",
 			"owner":       "engineering",
 			"cost_center": "CC-0001",
 		},
