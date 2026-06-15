@@ -51,7 +51,7 @@ jobs:
         run: terraform fmt -check -recursive
 
       - name: Install TFLint
-        uses: terraform-linters/setup-tflint@19a52fbac37dacb22a09518e4ef6ee234f2d4987  # v4.0.0
+        uses: terraform-linters/setup-tflint@b480b8fcdaa6f2c577f8e4fa799e89e756bb7c93  # v6.2.2
 
       - name: Cache TFLint plugins
         uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684  # v4.2.3
