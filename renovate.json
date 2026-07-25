@@ -1,0 +1,91 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "Renovate config for musaumakau/infrastructure-modules",
+  "extends": [
+    "config:recommended"
+  ],
+
+  "timezone": "Africa/Nairobi",
+  "schedule": ["after 9am and before 5pm on monday"],
+
+  "labels": ["dependencies", "renovate"],
+  "assignees": ["musaumakau"],
+  "reviewers": ["musaumakau"],
+
+  "prHourlyLimit": 3,
+  "prConcurrentLimit": 5,
+  "rebaseWhen": "conflicted",
+
+  "packageRules": [
+    {
+      "description": "Group all GitHub Actions updates into a single PR",
+      "matchManagers": ["github-actions"],
+      "groupName": "github-actions",
+      "automerge": false,
+      "labels": ["dependencies", "github-actions", "renovate"]
+    },
+    {
+      "description": "Group Terraform AWS provider updates",
+      "matchManagers": ["terraform"],
+      "matchDepTypes": ["provider"],
+      "matchPackageNames": ["hashicorp/aws"],
+      "groupName": "terraform-aws-provider",
+      "automerge": false,
+      "labels": ["dependencies", "terraform", "renovate"]
+    },
+    {
+      "description": "Group all other Terraform provider updates",
+      "matchManagers": ["terraform"],
+      "matchDepTypes": ["provider"],
+      "groupName": "terraform-providers",
+      "automerge": false,
+      "labels": ["dependencies", "terraform", "renovate"]
+    },
+    {
+      "description": "Terraform required_version and module sources",
+      "matchManagers": ["terraform"],
+      "matchDepTypes": ["required_version", "module"],
+      "automerge": false,
+      "labels": ["dependencies", "terraform", "renovate"]
+    },
+    {
+      "description": "Pin GitHub Actions to SHA digests (supply chain security)",
+      "matchManagers": ["github-actions"],
+      "pinDigests": true
+    },
+    {
+      "description": "Auto-merge patch updates for GitHub Actions",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["patch", "digest"],
+      "automerge": true,
+      "automergeType": "pr",
+      "automergeStrategy": "squash"
+    },
+    {
+      "description": "Separate major Terraform provider bumps — review manually",
+      "matchManagers": ["terraform"],
+      "matchUpdateTypes": ["major"],
+      "automerge": false,
+      "labels": ["dependencies", "terraform", "major", "renovate"]
+    }
+  ],
+
+  "terraform": {
+    "enabled": true
+  },
+
+  "github-actions": {
+    "enabled": true,
+    "fileMatch": ["^\\.github/workflows/[^/]+\\.ya?ml$"]
+  },
+
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "labels": ["security", "renovate"]
+  },
+
+  "ignorePaths": [
+    "**/terraform.tfvars*",
+    "**/*.tfvars.example"
+  ]
+}
