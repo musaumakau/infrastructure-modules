@@ -7,6 +7,7 @@
 
   "timezone": "Africa/Nairobi",
   "schedule": ["after 9am and before 5pm on monday"],
+  "minimumReleaseAge": "7 days",
 
   "labels": ["dependencies", "renovate"],
   "assignees": ["musaumakau"],
@@ -67,6 +68,13 @@
       "matchUpdateTypes": ["major"],
       "automerge": false,
       "labels": ["dependencies", "terraform", "major", "renovate"]
+    },
+    {
+      "description": "Ignore Helm provider major version bump until set{} migration is done",
+      "matchManagers": ["terraform"],
+      "matchPackageNames": ["hashicorp/helm"],
+      "matchUpdateTypes": ["major"],
+      "enabled": false
     }
   ],
 
